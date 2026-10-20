@@ -13,9 +13,10 @@ is done with the Linux host build.
   `XEDK` environment variable points at it and Visual Studio shows an
   **Xbox 360** platform.
 * **Python 3** (any recent version) for `tools/prepare_game.py`.
-* Your own copy of Balatro (`Balatro.exe` from your Steam install).
-* A way to run unsigned code on the console: a dev/test kit, or an RGH/JTAG
-  console with a homebrew dashboard (Aurora, FSD or XeXMenu) and FTP access.
+* Your own legally obtained copy of the PC version of Balatro (`Balatro.exe`).
+* A console that can run unsigned XEX files. On a stock console that is
+  usually an exploit run from USB such as ABadAvatar; RGH/JTAG consoles and
+  dev kits work too.
 
 ## 1. Get the source
 
@@ -38,11 +39,16 @@ git checkout claude/exciting-feynman-7xcs5u
 
 The result is `build\xbox360\out\Release\default.xex`.
 
-From a *Visual Studio Command Prompt (2010)* you can do the same with:
+From a command prompt you can do the same with:
 
 ```
 msbuild build\xbox360\Balatro360.sln /p:Configuration=Release /p:Platform="Xbox 360" /m > build_log.txt
 ```
+
+Either the *Visual Studio Command Prompt (2010)* or the XDK's *Xbox 360
+Command Prompt* works for this: the project's Xbox 360 platform settings
+find the XDK compiler through the `XEDK` environment variable either way.
+(The LuaJIT step below is different and needs the Visual Studio prompt.)
 
 ### Faster Lua: the LuaJIT configurations (recommended once the plain build works)
 
@@ -59,7 +65,11 @@ Lua 5.1, which matters a lot on the 360's CPU.
    ```
 
 2. Open **Visual Studio Command Prompt (2010)** (the 32-bit one; the XDK must
-   be installed so `XEDK` is set) and run LuaJIT's Xbox 360 build script:
+   be installed so `XEDK` is set) and run LuaJIT's Xbox 360 build script.
+   Use this prompt rather than the Xbox 360 Command Prompt: the script first
+   builds small helper tools for your PC with the plain `cl` on `PATH`, and
+   only then calls the XDK's cross compiler itself through `%XEDK%`. If `cl`
+   on `PATH` is the XDK's PowerPC compiler, those helper tools can't run.
 
    ```
    cd third_party\luajit\src
@@ -78,7 +88,7 @@ use `Release LuaJIT`.)
 ## 3. Build the console folder
 
 ```
-python tools\prepare_game.py "C:\Program Files (x86)\Steam\steamapps\common\Balatro\Balatro.exe" out\Balatro360 --xex build\xbox360\out\Release\default.xex
+python tools\prepare_game.py "F:\Program Files (x86)\Balatro.v1.0.1n\Balatro.exe" out\Balatro360 --xex build\xbox360\out\Release\default.xex
 ```
 
 This extracts the game's files from *your* `Balatro.exe` into
@@ -96,12 +106,13 @@ runtime just copy the new `default.xex`.
 
 ## 4. Copy to the console and run
 
-* **RGH/JTAG**: FTP the whole `Balatro360` folder to the console, for example to
-  `Hdd1:\Games\Balatro360\`, then launch `default.xex` from Aurora/FSD/XeXMenu.
-  (In Aurora you can also add the folder as a scan path so it shows up as a
-  game.)
-* **Dev kit**: copy the folder with Xbox 360 Neighborhood (e.g. to
-  `devkit:\Balatro360\`) or deploy from Visual Studio, and run it from there.
+Copy the whole `Balatro360` folder wherever your setup launches unsigned XEX
+files from (for example a USB drive used with ABadAvatar, or the console's
+hard drive via FTP), then launch `default.xex` with your launcher. The folder
+must stay together: the runtime reads `game\` and writes `save\` and
+`b360.log` next to `default.xex`, so that location must be writable (a USB
+drive or hard drive is; a disc is not). On a dev kit you can also deploy from
+Visual Studio.
 
 On first launch the runtime creates `save\` next to `default.xex` and writes a
 log to `b360.log`. Startup takes a few seconds longer than later loads because

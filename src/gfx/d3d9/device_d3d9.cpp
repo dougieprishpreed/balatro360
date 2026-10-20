@@ -34,20 +34,20 @@ namespace {
 
 IDirect3DDevice9* g_device = NULL;
 
-class D3DTexture : public Texture {
+class XeTexture : public Texture {
 public:
     IDirect3DTexture9* tex;
     bool linear;        // LIN_ format (CPU writable)
     bool usedByGPU;     // drawn with since the last CPU update
     bool needsRestore;  // canvas: EDRAM must be refilled before drawing
-    D3DTexture() : tex(NULL), linear(true), usedByGPU(false), needsRestore(false) {}
+    XeTexture() : tex(NULL), linear(true), usedByGPU(false), needsRestore(false) {}
 };
 
 struct UniformValue {
     std::vector<float> data;
 };
 
-class D3DShader : public Shader {
+class XeShader : public Shader {
 public:
     IDirect3DVertexShader9* vs;
     IDirect3DPixelShader9* ps;
@@ -56,8 +56,8 @@ public:
     std::map<std::string, UniformValue> values;
     bool dirty;
 
-    D3DShader() : vs(NULL), ps(NULL), vsConst(NULL), psConst(NULL), dirty(true) {}
-    ~D3DShader() {
+    XeShader() : vs(NULL), ps(NULL), vsConst(NULL), psConst(NULL), dirty(true) {}
+    ~XeShader() {
         if (vs) vs->Release();
         if (ps) ps->Release();
         if (vsConst) vsConst->Release();
@@ -121,9 +121,9 @@ DWORD argb(const u8* p) {
     return ((DWORD)p[3] << 24) | ((DWORD)p[0] << 16) | ((DWORD)p[1] << 8) | (DWORD)p[2];
 }
 
-class D3D9Device : public Device {
+class XeDevice : public Device {
 public:
-    D3D9Device()
+    XeDevice()
         : d3d(NULL), w(0), h(0), backbuffer(NULL), canvasSurface(NULL), canvasW(0), canvasH(0),
           edramCanvasBase(0), current(NULL), dirtyCanvas(false), decl(NULL), defaultShader(NULL),
           boundShader(NULL), boundTex(NULL), blend(-1) {}
@@ -163,7 +163,7 @@ public:
         g_device->SetRenderState(D3DRS_HALFPIXELOFFSET, TRUE);   // GL-style pixel centres
 
         std::string err;
-        defaultShader = (D3DShader*)createShader("", err);
+        defaultShader = (XeShader*)createShader("", err);
         if (!defaultShader) {
             plat::log("[d3d] default shader failed:\n%s", err.c_str());
             return false;
@@ -177,7 +177,7 @@ public:
 
     virtual Texture* createTexture(int tw, int th, const u8* pixels, bool mipmaps) {
         (void)mipmaps;   // TODO: mipmaps for linear textures
-        D3DTexture* t = new D3DTexture;
+        XeTexture* t = new XeTexture;
         t->width = tw;
         t->height = th;
         if (FAILED(g_device->CreateTexture(tw, th, 1, 0, D3DFMT_LIN_A8R8G8B8, 0, &t->tex, NULL))) {
@@ -190,7 +190,7 @@ public:
     }
 
     virtual Texture* createRenderTarget(int tw, int th) {
-        D3DTexture* t = new D3DTexture;
+        XeTexture* t = new XeTexture;
         t->width = tw;
         t->height = th;
         t->renderTarget = true;
@@ -209,11 +209,11 @@ public:
     }
 
     virtual void updateTexture(Texture* tex, int x, int y, int tw, int th, const u8* pixels) {
-        writePixels((D3DTexture*)tex, x, y, tw, th, pixels);
+        writePixels((XeTexture*)tex, x, y, tw, th, pixels);
     }
 
     virtual void destroyTexture(Texture* tex) {
-        D3DTexture* t = (D3DTexture*)tex;
+        XeTexture* t = (XeTexture*)tex;
         if (!t) return;
         if (current == t) setRenderTarget(NULL);
         if (boundTex == t) {
@@ -253,7 +253,7 @@ public:
             if (ptab) ptab->Release();
             return NULL;
         }
-        D3DShader* s = new D3DShader;
+        XeShader* s = new XeShader;
         s->uniforms = info.uniforms;
         s->vsConst = vtab;
         s->psConst = ptab;
@@ -275,11 +275,11 @@ public:
             g_device->SetVertexShader(NULL);
             g_device->SetPixelShader(NULL);
         }
-        delete (D3DShader*)sh;
+        delete (XeShader*)sh;
     }
 
     virtual void setRenderTarget(Texture* rt) {
-        D3DTexture* t = (D3DTexture*)rt;
+        XeTexture* t = (XeTexture*)rt;
         if (current && current == t && rt) return;
         resolveCurrent();
         current = t;
@@ -327,9 +327,9 @@ public:
     virtual void drawTriangles(const Vertex* verts, int count, Texture* tex, Shader* shader, BlendMode b) {
         if (count <= 0) return;
         if (current && current->needsRestore) restoreCanvas();
-        D3DShader* s = shader ? (D3DShader*)shader : defaultShader;
+        XeShader* s = shader ? (XeShader*)shader : defaultShader;
         bindShader(s);
-        bindTexture((D3DTexture*)tex);
+        bindTexture((XeTexture*)tex);
         applyBlend(b);
         g_device->SetVertexDeclaration(decl);
         // DrawPrimitiveUP copies into the command ring buffer; keep each call
@@ -340,7 +340,7 @@ public:
             if (n > maxVerts) n = maxVerts;
             g_device->DrawPrimitiveUP(D3DPT_TRIANGLELIST, n / 3, verts + start, sizeof(Vertex));
         }
-        ((D3DTexture*)tex)->usedByGPU = true;
+        ((XeTexture*)tex)->usedByGPU = true;
         dirtyCanvas = true;
     }
 
@@ -358,12 +358,12 @@ private:
     IDirect3DSurface9* canvasSurface;
     int canvasW, canvasH;
     DWORD edramCanvasBase;
-    D3DTexture* current;
+    XeTexture* current;
     bool dirtyCanvas;
     IDirect3DVertexDeclaration9* decl;
-    D3DShader* defaultShader;
-    D3DShader* boundShader;
-    D3DTexture* boundTex;
+    XeShader* defaultShader;
+    XeShader* boundShader;
+    XeTexture* boundTex;
     int blend;
 
     bool ensureCanvasSurface(int tw, int th) {
@@ -402,7 +402,7 @@ private:
     // Draw the canvas texture back into EDRAM (the game drew to a canvas
     // that was bound before without clearing it first).
     void restoreCanvas() {
-        D3DTexture* t = current;
+        XeTexture* t = current;
         t->needsRestore = false;
         Vertex v[6];
         float x1 = (float)t->width, y1 = (float)t->height;
@@ -428,14 +428,14 @@ private:
         blend = -1;
     }
 
-    void waitGPU(D3DTexture* t) {
+    void waitGPU(XeTexture* t) {
         if (!t->usedByGPU) return;
         DWORD fence = g_device->InsertFence();
         g_device->BlockOnFence(fence);
         t->usedByGPU = false;
     }
 
-    void writePixels(D3DTexture* t, int x, int y, int tw, int th, const u8* pixels) {
+    void writePixels(XeTexture* t, int x, int y, int tw, int th, const u8* pixels) {
         if (!t->linear) return;
         waitGPU(t);
         RECT rc;
@@ -453,7 +453,7 @@ private:
         t->tex->UnlockRect(0);
     }
 
-    void bindShader(D3DShader* s) {
+    void bindShader(XeShader* s) {
         float tw = (float)(current ? current->width : w);
         float th = (float)(current ? current->height : h);
         // Pixels (y down) -> clip space (y up).
@@ -472,7 +472,7 @@ private:
         s->upload(proj, screen);
     }
 
-    void bindTexture(D3DTexture* t) {
+    void bindTexture(XeTexture* t) {
         if (boundTex == t) return;
         g_device->SetTexture(0, t->tex);
         DWORD minF = t->minFilter == FILTER_NEAREST ? D3DTEXF_POINT : D3DTEXF_LINEAR;
@@ -541,6 +541,6 @@ private:
 
 }  // namespace
 
-Device* createDevice() { return new D3D9Device; }
+Device* createDevice() { return new XeDevice; }
 
 }  // namespace gfx

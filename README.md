@@ -1,11 +1,12 @@
 # Balatro360
 
 An unofficial, fan-made port of [Balatro](https://www.playbalatro.com/) to the
-Xbox 360 for homebrew-enabled consoles (RGH/JTAG or dev kits).
+Xbox 360, for consoles that can run unsigned code (for example via
+ABadAvatar from USB, or RGH/JTAG).
 
 **This repository contains no game data.** Balatro is © LocalThunk / Playstack.
 To use this project you must own the game and supply your own legally obtained
-copy (e.g. the Steam version). The tools here read *your* `Balatro.exe` and
+copy of the PC version. The tools here read *your* `Balatro.exe` and
 build a console folder from it on your machine; nothing from the game is ever
 committed here or redistributed.
 
@@ -57,12 +58,12 @@ big-endian PowerPC.
 2. **Prepare the game folder** from your own copy of the game (Python 3):
 
    ```
-   python tools/prepare_game.py "C:\Program Files (x86)\Steam\steamapps\common\Balatro\Balatro.exe" out\Balatro360 --xex build\xbox360\out\Release\default.xex
+   python tools/prepare_game.py "path\to\Balatro.exe" out\Balatro360 --xex build\xbox360\out\Release\default.xex
    ```
 
-3. **Copy** `out\Balatro360` to the console (for example
-   `Hdd1:\Games\Balatro360\`) and launch `default.xex` from your dashboard
-   (Aurora, FSD, XeXMenu).
+3. **Copy** `out\Balatro360` to wherever you launch unsigned XEX files from
+   (e.g. a USB drive) and launch `default.xex`. Keep the folder together and
+   writable: saves and the log are written next to the XEX.
 
 ### Controls
 

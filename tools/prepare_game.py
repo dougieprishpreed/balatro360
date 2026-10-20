@@ -11,7 +11,7 @@ into the folder layout the Xbox 360 build expects:
         save/            (created on the console on first run)
 
 Usage:
-    python tools/prepare_game.py "C:/Program Files (x86)/Steam/steamapps/common/Balatro/Balatro.exe" out/Balatro360
+    python tools/prepare_game.py "path/to/Balatro.exe" out/Balatro360
     python tools/prepare_game.py Balatro.exe out/Balatro360 --xex build/xbox360/out/Release/default.xex
 
 The input may also be a .love file or an already-extracted game folder.
@@ -113,8 +113,8 @@ def main():
         for n in long_names:
             print("  " + n)
     print("")
-    print("Copy the whole '%s' folder to your console (e.g. Hdd1:\\Games\\Balatro360\\)" % args.output)
-    print("and launch default.xex. Saves are written to game:\\save\\.")
+    print("Copy the whole '%s' folder to your console (e.g. a USB drive) and" % args.output)
+    print("launch default.xex. Saves and b360.log are written next to it.")
 
 
 if __name__ == "__main__":
