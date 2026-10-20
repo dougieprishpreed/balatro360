@@ -20,14 +20,22 @@ is done with the Linux host build.
 
 ## 1. Get the source
 
-Clone the repository (or download a zip of the branch), for example to
-`F:\downloads\temp\python\hermes\balatro360`.
+The code lives on the branch **`claude/exciting-feynman-7xcs5u`**, not on
+`main`. To get it (and to update it later):
 
-```
-git clone https://github.com/dougieprishpreed/balatro360.git F:\downloads\temp\python\hermes\balatro360
-cd F:\downloads\temp\python\hermes\balatro360
-git checkout claude/exciting-feynman-7xcs5u
-```
+1. On GitHub, open the repository, switch the branch selector from `main` to
+   `claude/exciting-feynman-7xcs5u`, then **Code → Download ZIP**.
+2. The zip contains one folder named `balatro360-claude-exciting-feynman-7xcs5u`.
+   Copy *its contents* over your project folder
+   (`F:\downloads\temp\python\hermes\balatro360`), overwriting files.
+3. Do a full **Rebuild** (not just Build) after each update, so nothing is
+   skipped because of file timestamps from the zip.
+
+Overwriting never deletes files that were removed from the repository. That
+is harmless: the Visual Studio project lists exactly which files to compile.
+
+Each zip carries a source stamp; the runtime writes it as the first line of
+`b360.log` (`source <commit> <date>`), so logs show which version was built.
 
 ## 2. Build the XEX
 
@@ -35,14 +43,14 @@ git checkout claude/exciting-feynman-7xcs5u
 2. In the toolbar pick the configuration **Release** and platform **Xbox 360**.
    (Debug also works; it is much slower but easier to debug on a dev kit.
    The **LuaJIT** configurations are described below.)
-3. **Build → Build Solution** (F7).
+3. **Build → Rebuild Solution**.
 
 The result is `build\xbox360\out\Release\default.xex`.
 
 From a command prompt you can do the same with:
 
 ```
-msbuild build\xbox360\Balatro360.sln /p:Configuration=Release /p:Platform="Xbox 360" /m > build_log.txt
+msbuild build\xbox360\Balatro360.sln /t:Rebuild /p:Configuration=Release /p:Platform="Xbox 360" /m > build_log.txt
 ```
 
 Either the *Visual Studio Command Prompt (2010)* or the XDK's *Xbox 360
@@ -63,6 +71,12 @@ Lua 5.1, which matters a lot on the 360's CPU.
    ```
    git clone -b v2.1 https://github.com/LuaJIT/LuaJIT.git third_party\luajit
    ```
+
+   Or without git: download
+   <https://github.com/LuaJIT/LuaJIT/archive/refs/heads/v2.1.zip>, extract it,
+   and rename the extracted `LuaJIT-2.1` folder to `third_party\luajit`, so
+   that `third_party\luajit\src\xedkbuild.bat` exists. Updating the
+   Balatro360 zip never touches this folder, so you only do this once.
 
 2. Open **Visual Studio Command Prompt (2010)** (the 32-bit one; the XDK must
    be installed so `XEDK` is set) and run LuaJIT's Xbox 360 build script.
@@ -128,11 +142,9 @@ probably need some fixes. The quickest loop is:
 1. If the build fails, save the full build output (the `msbuild ... >
    build_log.txt` command above, or copy everything from Visual Studio's
    **Output** window).
-2. If it builds but misbehaves on the console, grab `b360.log` from the game
-   folder (FTP) and, if possible, a photo of the screen.
-3. Commit them to the repository under `reports/` (for example
-   `reports/build_log.txt`, `reports/b360.log`) and push, or paste them into
-   the chat. Those files are plain text and contain no game data.
+2. If it builds but misbehaves on the console, grab `b360.log` from next to
+   `default.xex` and, if possible, a photo of the screen.
+3. Attach them in the chat. They are plain text and contain no game data.
 
 ## Troubleshooting
 
@@ -170,7 +182,8 @@ the folder the XEX was launched from.
 ## Regenerating project files
 
 `build/xbox360/*.vcxproj*` and `src/runtime/embedded_lua.h` are generated and
-committed so you don't need Python to build:
+committed, so you never need to run these yourself; they are only needed
+after changing the source:
 
 ```
 python tools\gen_vcxproj.py      # after adding/removing source files

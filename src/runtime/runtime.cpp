@@ -4,6 +4,7 @@
 #include "modules.h"
 #include "event.h"
 #include "embedded_lua.h"
+#include "../common/build_id.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -106,7 +107,10 @@ int run(int argc, char** argv) {
         plat::fatal("Platform initialisation failed");
         return 1;
     }
-    plat::log("Balatro360 runtime starting (%s)", plat::osName());
+    const char* commit = B360_SOURCE_COMMIT[0] == '$' ? "git checkout" : B360_SOURCE_COMMIT;
+    const char* date = B360_SOURCE_DATE[0] == '$' ? "" : B360_SOURCE_DATE;
+    plat::log("Balatro360 runtime starting (%s), source %s %s, built %s %s", plat::osName(), commit, date,
+              __DATE__, __TIME__);
     if (!initGraphics(cfg.width, cfg.height)) {
         plat::fatal("Could not initialise graphics");
         return 1;

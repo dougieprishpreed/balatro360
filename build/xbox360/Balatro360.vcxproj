@@ -409,6 +409,7 @@
     <ClCompile Include="..\..\src\platform\xbox360\main_x360.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\src\common\build_id.h" />
     <ClInclude Include="..\..\src\common\types.h" />
     <ClInclude Include="..\..\src\gfx\device.h" />
     <ClInclude Include="..\..\src\gfx\shader_translate.h" />

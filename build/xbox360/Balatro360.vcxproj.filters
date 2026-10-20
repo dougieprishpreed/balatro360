@@ -152,6 +152,9 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\src\common\build_id.h">
+      <Filter></Filter>
+    </ClInclude>
     <ClInclude Include="..\..\src\common\types.h">
       <Filter></Filter>
     </ClInclude>
