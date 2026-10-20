@@ -46,6 +46,7 @@ local function apply_console_flags(G)
 	G.F_HIDE_BG = true           -- console versions hide the board when paused
 	G.F_SOUND_THREAD = true
 	G.F_NO_ERROR_HAND = false    -- show the error screen instead of exiting
+	G.F_VERBOSE = false          -- like Balatro's own console versions
 	local name = love.system.getUsername and love.system.getUsername()
 	if type(name) == "string" and name ~= "" and love._os == "Xbox 360" then
 		G.F_DISP_USERNAME = name

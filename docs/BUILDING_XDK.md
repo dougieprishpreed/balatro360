@@ -20,14 +20,13 @@ is done with the Linux host build.
 
 ## 1. Get the source
 
-The code lives on the branch **`claude/exciting-feynman-7xcs5u`**, not on
-`main`. To get it (and to update it later):
+To get the code (and to update it later):
 
-1. On GitHub, open the repository, switch the branch selector from `main` to
-   `claude/exciting-feynman-7xcs5u`, then **Code → Download ZIP**.
-2. The zip contains one folder named `balatro360-claude-exciting-feynman-7xcs5u`.
-   Copy *its contents* over your project folder
-   (`F:\downloads\temp\python\hermes\balatro360`), overwriting files.
+1. On GitHub, open the repository's `main` branch and choose
+   **Code → Download ZIP**.
+2. The zip contains one folder named `balatro360-main`. Copy *its contents*
+   over your project folder (`F:\downloads\temp\python\hermes\balatro360`),
+   overwriting files.
 3. Do a full **Rebuild** (not just Build) after each update, so nothing is
    skipped because of file timestamps from the zip.
 

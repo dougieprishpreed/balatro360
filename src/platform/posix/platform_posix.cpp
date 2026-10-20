@@ -200,7 +200,13 @@ void sleep(double seconds) {
     nanosleep(&ts, NULL);
 }
 
-u64 unixTime() { return (u64)time(NULL); }
+u64 unixTime() {
+    // B360_FIXED_TIME pins os.time() (Balatro seeds new runs from it), so
+    // scripted runs are reproducible frame for frame.
+    const char* t = getenv("B360_FIXED_TIME");
+    if (t && *t) return (u64)strtoull(t, NULL, 10);
+    return (u64)time(NULL);
+}
 
 // ------------------------------------------------------------------ threads
 struct Thread {

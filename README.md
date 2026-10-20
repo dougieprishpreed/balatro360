@@ -37,11 +37,15 @@ big-endian PowerPC.
 
 ## Status
 
-* Playable on real hardware and in Xenia with the `Release LuaJIT`
-  configuration: menus run at 60 fps; in a round Balatro's own Lua logic needs
-  more than the 16.7 ms a 60 fps frame allows on the 360's CPU, so the runtime
-  then switches to a steady 30 fps (see `B360_FPS` below) instead of
-  alternating between the two.
+**Alpha.** Playable on real hardware and in Xenia with the `Release LuaJIT`
+configuration.
+
+* Menus run at a locked 60 fps (about 7 ms of CPU per frame).
+* In a round Balatro's own Lua logic takes about 20 ms of CPU per frame on
+  the 360, more than the 16.7 ms a 60 fps frame allows, so the runtime runs
+  rounds at a locked 30 fps instead of alternating between 60 and 30 (see
+  `B360_FPS` below). The time is spent in the game's code (card movement, UI
+  layout and drawing), not in rendering.
 * The Linux build runs the same game code with scripted controller input,
   for development and automated testing.
 

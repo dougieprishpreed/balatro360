@@ -54,6 +54,7 @@ out/host/b360
 | `B360_FIXED_DT` | fixed frame time in seconds; makes runs deterministic and independent of host speed |
 | `B360_MAX_FRAMES` | quit after this many frames |
 | `B360_WAV` | write the mixed audio to a WAV file |
+| `B360_FIXED_TIME` | pin `os.time()` (Balatro seeds runs from it) so runs are identical frame for frame |
 | `B360_NULL_VSYNC` | `1`: the null renderer behaves like a 60 Hz display (for frame pacing tests) |
 
 A `b360_config.lua` in the save folder works like on the console, e.g.

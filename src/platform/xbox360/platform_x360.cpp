@@ -8,6 +8,8 @@
 #include "../platform.h"
 
 #include <xtl.h>
+
+#include <string>
 #include <xaudio2.h>
 
 #include <stdarg.h>
@@ -25,8 +27,39 @@ namespace {
 
 LARGE_INTEGER g_freq;
 LARGE_INTEGER g_start;
+// b360.log is written by a background thread: writing and flushing to a USB
+// drive takes milliseconds per call, which stalled the game whenever it
+// printed (Balatro prints on every slow frame, so one stall caused more).
 HANDLE g_logFile = INVALID_HANDLE_VALUE;
-CRITICAL_SECTION g_logLock;
+CRITICAL_SECTION g_logLock;       // guards g_logPending
+CRITICAL_SECTION g_logFileLock;   // keeps batches in order when flushing
+std::string g_logPending;
+HANDLE g_logEvent = NULL;
+HANDLE g_logThread = NULL;
+volatile LONG g_logRun = 0;
+
+void flushLog() {
+    EnterCriticalSection(&g_logFileLock);
+    std::string out;
+    EnterCriticalSection(&g_logLock);
+    out.swap(g_logPending);
+    LeaveCriticalSection(&g_logLock);
+    if (!out.empty() && g_logFile != INVALID_HANDLE_VALUE) {
+        DWORD written = 0;
+        WriteFile(g_logFile, out.data(), (DWORD)out.size(), &written, NULL);
+        FlushFileBuffers(g_logFile);
+    }
+    LeaveCriticalSection(&g_logFileLock);
+}
+
+DWORD WINAPI logWriter(LPVOID) {
+    while (g_logRun) {
+        WaitForSingleObject(g_logEvent, 250);
+        flushLog();
+    }
+    flushLog();
+    return 0;
+}
 bool g_quit = false;
 double g_quitComboStart = -1.0;
 
@@ -48,14 +81,32 @@ bool init(Config& cfg) {
     QueryPerformanceFrequency(&g_freq);
     QueryPerformanceCounter(&g_start);
     InitializeCriticalSection(&g_logLock);
+    InitializeCriticalSection(&g_logFileLock);
     g_logFile = CreateFileA(kLogPath, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS,
                             FILE_ATTRIBUTE_NORMAL, NULL);
+    g_logEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    g_logRun = 1;
+    g_logThread = CreateThread(NULL, 64 * 1024, logWriter, NULL, CREATE_SUSPENDED, NULL);
+    if (g_logThread) {
+        XSetThreadProcessor(g_logThread, 4);
+        ResumeThread(g_logThread);
+    } else {
+        g_logRun = 0;   // log() then writes directly
+    }
     cfg.width = 1280;
     cfg.height = 720;
     return true;
 }
 
 void shutdown() {
+    if (g_logThread) {
+        g_logRun = 0;
+        SetEvent(g_logEvent);
+        WaitForSingleObject(g_logThread, INFINITE);
+        CloseHandle(g_logThread);
+        g_logThread = NULL;
+    }
+    flushLog();
     if (g_logFile != INVALID_HANDLE_VALUE) {
         CloseHandle(g_logFile);
         g_logFile = INVALID_HANDLE_VALUE;
@@ -101,16 +152,15 @@ void log(const char* fmt, ...) {
     buf[n] = 0;
     OutputDebugStringA(buf);
     EnterCriticalSection(&g_logLock);
-    if (g_logFile != INVALID_HANDLE_VALUE) {
-        DWORD written = 0;
-        WriteFile(g_logFile, buf, (DWORD)n, &written, NULL);
-        FlushFileBuffers(g_logFile);
-    }
+    if (g_logPending.size() < 4 * 1024 * 1024) g_logPending.append(buf, n);
     LeaveCriticalSection(&g_logLock);
+    if (g_logRun) SetEvent(g_logEvent);
+    else flushLog();
 }
 
 void fatal(const char* msg) {
     log("FATAL: %s", msg);
+    flushLog();
 }
 
 // --------------------------------------------------------------------- time

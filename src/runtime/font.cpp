@@ -77,6 +77,11 @@ void Font::ensure() {
     descent = (int)floor(desc * scale);
     height = (int)floor((asc - desc + gap) * scale + 0.5f);
     ok = true;
+    // Rasterise printable ASCII now, while the atlas isn't in use yet.
+    // Adding a glyph later means writing to a texture the GPU may still be
+    // reading, which on the 360 waits for the GPU to finish all queued work
+    // (a visible hitch the first time new text appears mid-game).
+    for (u32 c = 32; c < 127; ++c) glyph(c);
 }
 
 Font::~Font() {
