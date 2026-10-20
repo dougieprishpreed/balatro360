@@ -129,8 +129,6 @@ int math_log(lua_State* L) {
     return 1;
 }
 
-#endif  // !B360_LUAJIT
-
 // ------------------------------------------------------------------ jit stub
 int jit_noop(lua_State* L) {
     (void)L;
@@ -141,6 +139,8 @@ int jit_status(lua_State* L) {
     lua_pushboolean(L, 0);
     return 1;
 }
+
+#endif  // !B360_LUAJIT
 
 // ------------------------------------------------------------------------ os
 int os_time(lua_State* L) {
@@ -257,8 +257,6 @@ void open_compat(lua_State* L) {
 
 #if defined(B360_LUAJIT)
     // LuaJIT provides math.random, math.log(x, base), bit and jit itself.
-    (void)jit_noop;
-    (void)jit_status;
 #else
     // math.random / math.randomseed (LuaJIT TW223), math.log(x, base)
     lua_getglobal(L, "math");

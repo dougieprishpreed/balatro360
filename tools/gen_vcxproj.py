@@ -91,6 +91,7 @@ def config_block(cfg, debug, luajit):
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
       <PreprocessorDefinitions>{defs}</PreprocessorDefinitions>
+      <RuntimeLibrary>{crt}</RuntimeLibrary>
       <AdditionalIncludeDirectories>{inc};%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ProgramDataBaseFileName>$(IntDir)vc$(PlatformToolsetVersion).pdb</ProgramDataBaseFileName>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
@@ -109,7 +110,10 @@ def config_block(cfg, debug, luajit):
       <DeploymentType>CopyToHardDrive</DeploymentType>
     </Deploy>
   </ItemDefinitionGroup>
-""".format(cond=cond, opt=opt, defs=defs, inc=inc, libs=libs, optref="false" if debug else "true")
+""".format(cond=cond, opt=opt, defs=defs, inc=inc, libs=libs, optref="false" if debug else "true",
+           # Always the static CRT: the XDK picks /MD (DLL CRT, which needs a
+           # nonexistent XAPI.lib) for configuration names it doesn't know.
+           crt="MultiThreadedDebug" if debug else "MultiThreaded")
 
 
 def vcxproj():
