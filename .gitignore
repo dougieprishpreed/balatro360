@@ -12,3 +12,6 @@ ipch/
 /save/
 *.love
 Balatro.exe
+
+# LuaJIT checkout used by the 'LuaJIT' configurations (cloned by the user)
+/third_party/luajit/

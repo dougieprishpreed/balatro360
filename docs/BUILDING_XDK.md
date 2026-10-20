@@ -32,7 +32,8 @@ git checkout claude/exciting-feynman-7xcs5u
 
 1. Open `build\xbox360\Balatro360.sln` in Visual Studio 2010.
 2. In the toolbar pick the configuration **Release** and platform **Xbox 360**.
-   (Debug also works; it is much slower but easier to debug on a dev kit.)
+   (Debug also works; it is much slower but easier to debug on a dev kit.
+   The **LuaJIT** configurations are described below.)
 3. **Build → Build Solution** (F7).
 
 The result is `build\xbox360\out\Release\default.xex`.
@@ -42,6 +43,37 @@ From a *Visual Studio Command Prompt (2010)* you can do the same with:
 ```
 msbuild build\xbox360\Balatro360.sln /p:Configuration=Release /p:Platform="Xbox 360" /m > build_log.txt
 ```
+
+### Faster Lua: the LuaJIT configurations (recommended once the plain build works)
+
+By default the runtime uses the reference Lua 5.1 interpreter, which is
+portable but slow. LuaJIT ships an official Xbox 360 build script (its
+interpreter, written in PowerPC assembly; no JIT on the console). On the
+Linux test build, LuaJIT's interpreter runs Balatro about **2x faster** than
+Lua 5.1, which matters a lot on the 360's CPU.
+
+1. Clone LuaJIT 2.1 into `third_party\luajit` (this folder is git-ignored):
+
+   ```
+   git clone -b v2.1 https://github.com/LuaJIT/LuaJIT.git third_party\luajit
+   ```
+
+2. Open **Visual Studio Command Prompt (2010)** (the 32-bit one; the XDK must
+   be installed so `XEDK` is set) and run LuaJIT's Xbox 360 build script:
+
+   ```
+   cd third_party\luajit\src
+   xedkbuild
+   ```
+
+   It should end with `=== Successfully built LuaJIT for Xbox 360 ===` and
+   leave `luajit20.lib` in `third_party\luajit\src`.
+
+3. In Visual Studio pick the **Release LuaJIT** configuration and build. The
+   XEX lands in `build\xbox360\out\Release LuaJIT\default.xex`.
+
+(`Debug LuaJIT` needs a debug LuaJIT: run `xedkbuild debug` instead, or just
+use `Release LuaJIT`.)
 
 ## 3. Build the console folder
 

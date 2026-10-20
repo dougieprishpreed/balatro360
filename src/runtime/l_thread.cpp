@@ -293,12 +293,19 @@ int c_clear(lua_State* L) {
 int c_performAtomic(lua_State* L) {
     Channel* c = checkChannel(L, 1);
     luaL_checktype(L, 2, LUA_TFUNCTION);
-    plat::Lock lock(c->mu);   // recursive mutex; Lua errors unwind as C++ exceptions
     int n = lua_gettop(L);
     lua_pushvalue(L, 2);
     lua_pushvalue(L, 1);
     for (int i = 3; i <= n; ++i) lua_pushvalue(L, i);
-    lua_call(L, n - 1, LUA_MULTRET);
+    int status;
+    {
+        // Recursive mutex: the function may call other methods of this
+        // channel. pcall so the lock is always released before an error
+        // propagates (LuaJIT unwinds errors with longjmp).
+        plat::Lock lock(c->mu);
+        status = lua_pcall(L, n - 1, LUA_MULTRET, 0);
+    }
+    if (status != 0) return lua_error(L);
     return lua_gettop(L) - n;
 }
 

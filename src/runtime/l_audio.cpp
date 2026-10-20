@@ -319,6 +319,8 @@ Source* newSourceFromFile(lua_State* L, const std::string& path, bool isStatic) 
 }
 
 // ------------------------------------------------------------ Lua wrappers
+// Rule for this file: never call anything that can raise a Lua error while
+// holding mixMutex() (LuaJIT unwinds errors with longjmp, skipping ~Lock).
 Source* checkSource(lua_State* L, int idx) { return (Source*)luax_checkobject(L, idx, "Source"); }
 
 int s_play(lua_State* L) {
@@ -502,18 +504,23 @@ int w_stop(lua_State* L) {
 }
 
 int w_pause(lua_State* L) {
+    // Validate arguments before taking the mixer lock: on LuaJIT (360) a Lua
+    // error longjmps and would leave the lock held.
+    std::vector<Source*> list;
+    for (int i = 1; i <= lua_gettop(L); ++i) list.push_back(checkSource(L, i));
     plat::Lock lock(mixMutex());
-    if (lua_gettop(L) == 0) {
+    if (list.empty()) {
         for (size_t i = 0; i < g_playing.size(); ++i) g_playing[i]->paused = true;
     } else {
-        for (int i = 1; i <= lua_gettop(L); ++i) checkSource(L, i)->paused = true;
+        for (size_t i = 0; i < list.size(); ++i) list[i]->paused = true;
     }
     return 0;
 }
 
 int w_setVolume(lua_State* L) {
+    float v = (float)luaL_checknumber(L, 1);
     plat::Lock lock(mixMutex());
-    g_masterVolume = (float)luaL_checknumber(L, 1);
+    g_masterVolume = v;
     return 0;
 }
 

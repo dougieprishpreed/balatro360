@@ -51,15 +51,17 @@ std::map<std::string, bool>& keysDown() {
 }
 
 int k_isDown(lua_State* L) {
-    plat::Lock lock(keyMutex());
-    for (int i = 1; i <= lua_gettop(L); ++i) {
-        std::map<std::string, bool>::iterator it = keysDown().find(luaL_checkstring(L, i));
-        if (it != keysDown().end() && it->second) {
-            lua_pushboolean(L, 1);
-            return 1;
+    std::vector<std::string> keys;
+    for (int i = 1; i <= lua_gettop(L); ++i) keys.push_back(luaL_checkstring(L, i));
+    bool down = false;
+    {
+        plat::Lock lock(keyMutex());
+        for (size_t i = 0; i < keys.size() && !down; ++i) {
+            std::map<std::string, bool>::iterator it = keysDown().find(keys[i]);
+            down = it != keysDown().end() && it->second;
         }
     }
-    lua_pushboolean(L, 0);
+    lua_pushboolean(L, down);
     return 1;
 }
 
@@ -255,14 +257,19 @@ int sys_getProcessorCount(lua_State* L) {
 }
 
 int sys_getClipboardText(lua_State* L) {
-    plat::Lock lock(clipMutex());
-    lua_pushstring(L, clipboard().c_str());
+    std::string text;
+    {
+        plat::Lock lock(clipMutex());
+        text = clipboard();
+    }
+    lua_pushlstring(L, text.data(), text.size());
     return 1;
 }
 
 int sys_setClipboardText(lua_State* L) {
+    std::string text = luaL_checkstring(L, 1);
     plat::Lock lock(clipMutex());
-    clipboard() = luaL_checkstring(L, 1);
+    clipboard() = text;
     return 0;
 }
 

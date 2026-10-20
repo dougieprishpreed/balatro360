@@ -18,7 +18,7 @@ the parts of the LÖVE 11 API the game uses, on top of the Xbox 360 XDK:
 
 | LÖVE piece | Balatro360 replacement |
 |---|---|
-| LuaJIT 2.1 | PUC Lua 5.1.5 + a LuaJIT compatibility layer (`bit`, `jit`, LuaJIT's exact `math.random`, `math.log(x, base)`) |
+| LuaJIT 2.1 | Either LuaJIT's own Xbox 360 interpreter build (recommended, about 2x faster) or PUC Lua 5.1.5 with a LuaJIT compatibility layer (`bit`, `jit`, LuaJIT's exact `math.random`, `math.log(x, base)`) |
 | OpenGL + GLSL shaders | Direct3D 9 on Xenos; the game's GLSL shaders are translated to HLSL at load time |
 | OpenAL + libvorbis | A software mixer feeding XAudio2; Ogg Vorbis via stb_vorbis |
 | SDL game controllers | XInput, exposed through `love.joystick` with the gamepad API |
@@ -43,6 +43,11 @@ big-endian PowerPC.
   but **has not yet been compiled or run on real hardware**. Expect a few
   rounds of fixing compiler and runtime issues. See
   [docs/BUILDING_XDK.md](docs/BUILDING_XDK.md).
+* Performance is the main unknown. On the Linux build a frame of gameplay
+  costs about 13 ms of CPU with Lua 5.1 and 6.5 ms with LuaJIT's interpreter
+  (on a modern x86 core); the 360's in-order PowerPC cores are several times
+  slower per thread, so the LuaJIT configuration will likely be needed for a
+  smooth frame rate.
 
 ## Quick start
 

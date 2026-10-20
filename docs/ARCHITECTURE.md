@@ -21,6 +21,16 @@ renderer differ between the Xbox 360 and the Linux development build.
 
 ## Lua
 
+The runtime only uses the Lua 5.1 C API, so it builds against either:
+
+* **LuaJIT 2.1** (`B360_LUAJIT`): LuaJIT's official Xbox 360 build
+  (`src/xedkbuild.bat`, interpreter only, VM in PowerPC assembly). This is the
+  fast option (about 2x PUC Lua on the Balatro workload) and is LuaJIT
+  itself, so behaviour matches PC exactly. LuaJIT unwinds errors with longjmp
+  there, so runtime code never holds locks across calls that can raise Lua
+  errors.
+* **PUC Lua 5.1.5** (default), described below.
+
 * **PUC Lua 5.1.5**, compiled **as C++** so that Lua errors are C++ exceptions
   and unwind our C++ frames correctly (RAII locks, std::string temporaries).
   LuaJIT can't be used: it has no Xbox 360 target, and homebrew can't rely on
@@ -38,6 +48,14 @@ renderer differ between the Xbox 360 and the Linux development build.
 * Lua sources and `l_compat.cpp` are built with `/fp:strict` on the 360 so
   the compiler can't fuse multiply-adds, which would change results in the
   last bit compared to PC.
+* `ltable.c` is patched to reuse dead keys in a key's own collision chain.
+  Balatro constantly sets fields to `nil` and back (`self.CALCING = true`,
+  ...). Stock 5.1 turns every removed key into a dead node at each GC cycle
+  and allocates a fresh node on re-insertion, so those chains grew to 30+
+  nodes and table lookups dominated the profile.
+* After all game code is loaded, inherited methods are copied into each
+  subclass (`hooks.lua`, `flatten_classes`) so method calls don't walk the
+  `__index` chain.
 
 ## Boot sequence
 

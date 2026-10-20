@@ -4,18 +4,29 @@
 #   make                 offscreen OpenGL build (needs libosmesa6-dev)  -> out/host/b360
 #   make GFX=null        no rendering                                   -> out/host-null/b360
 #   make ppc             big-endian PowerPC build, run under qemu-ppc   -> out/ppc/b360
+#   make LUA=luajit      link the system LuaJIT instead of PUC Lua 5.1  -> out/host-luajit/b360
 #
 # The flags deliberately restrict the code to C++98 so that it also builds
 # with the Visual Studio 2010-era Xbox 360 compiler.
 
 GFX ?= gl
+LUA ?= puc
 CROSS ?=
-OUT ?= out/host$(if $(filter null,$(GFX)),-null,)
+OUT ?= out/host$(if $(filter null,$(GFX)),-null,)$(if $(filter luajit,$(LUA)),-luajit,)
 
 CXX := $(CROSS)g++
 CC := $(CROSS)gcc
 
-INCLUDES := -Ithird_party/lua/src -Ithird_party/stb -Ithird_party/miniz -Ithird_party/luabitop -Isrc
+ifeq ($(LUA),luajit)
+# System LuaJIT 2.1 (apt install libluajit-5.1-dev); the 360 uses LuaJIT's
+# xedkbuild.bat instead, see docs/BUILDING_XDK.md.
+LUA_INC := -I/usr/include/luajit-2.1 -DB360_LUAJIT
+LUA_LIB := -lluajit-5.1
+else
+LUA_INC := -Ithird_party/lua/src -Ithird_party/luabitop
+LUA_LIB :=
+endif
+INCLUDES := $(LUA_INC) -Ithird_party/stb -Ithird_party/miniz -Isrc
 WARN := -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers
 OPT ?= -O2 -g
 CXXFLAGS := $(OPT) -std=c++98 -fsigned-char $(WARN) $(INCLUDES)
@@ -35,15 +46,16 @@ RUNTIME_SRC += src/gfx/null/device_null.cpp
 LIBS := -lpthread -lm
 endif
 
-OBJS := $(patsubst %.c,$(OUT)/%.o,$(LUA_SRC)) \
-	$(OUT)/third_party/luabitop/bit.o \
-	$(patsubst %.c,$(OUT)/%.o,$(MINIZ_SRC)) \
+OBJS := $(patsubst %.c,$(OUT)/%.o,$(MINIZ_SRC)) \
 	$(patsubst %.cpp,$(OUT)/%.o,$(RUNTIME_SRC))
+ifneq ($(LUA),luajit)
+OBJS += $(patsubst %.c,$(OUT)/%.o,$(LUA_SRC)) $(OUT)/third_party/luabitop/bit.o
+endif
 
 all: $(OUT)/b360 $(OUT)/b360-shadertool
 
 $(OUT)/b360: $(OBJS)
-	$(CXX) -o $@ $^ $(LIBS) $(LDFLAGS)
+	$(CXX) -o $@ $^ $(LUA_LIB) $(LIBS) $(LDFLAGS)
 
 $(OUT)/b360-shadertool: $(OUT)/src/tools/shadertool.o $(OUT)/src/gfx/shader_translate.o
 	$(CXX) -o $@ $^ $(LDFLAGS)

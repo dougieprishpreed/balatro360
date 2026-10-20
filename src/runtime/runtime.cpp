@@ -5,6 +5,7 @@
 #include "event.h"
 #include "embedded_lua.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 namespace rt {
@@ -42,6 +43,10 @@ void openStandardLibs(lua_State* L) {
         {LUA_STRLIBNAME, luaopen_string},
         {LUA_MATHLIBNAME, luaopen_math},
         {LUA_DBLIBNAME, luaopen_debug},
+#if defined(B360_LUAJIT)
+        {LUA_BITLIBNAME, luaopen_bit},
+        {LUA_JITLIBNAME, luaopen_jit},
+#endif
         {NULL, NULL}};
     for (const luaL_Reg* lib = libs; lib->func; ++lib) {
         lua_pushcfunction(L, lib->func);
@@ -50,6 +55,12 @@ void openStandardLibs(lua_State* L) {
     }
     lua_pushcfunction(L, luaPrint);
     lua_setglobal(L, "print");
+#if defined(B360_LUAJIT) && !defined(_XBOX)
+    // The 360 build of LuaJIT is interpreter-only. Mirror that on the host
+    // unless B360_JIT=1, so performance numbers are comparable.
+    const char* jitEnv = getenv("B360_JIT");
+    if (!jitEnv || strcmp(jitEnv, "1") != 0) luaJIT_setmode(L, 0, LUAJIT_MODE_ENGINE | LUAJIT_MODE_OFF);
+#endif
 }
 
 bool runEmbedded(lua_State* L, const unsigned char* code, unsigned int size, const char* name, int nresults) {

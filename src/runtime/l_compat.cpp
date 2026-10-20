@@ -19,12 +19,15 @@
 #include <string.h>
 #include <time.h>
 
+#if !defined(B360_LUAJIT)
 extern int luaopen_bit(lua_State* L);
+#endif
 
 namespace rt {
 
 namespace {
 
+#if !defined(B360_LUAJIT)
 // --------------------------------------------------- LuaJIT TW223 generator
 struct RandomState {
     u64 gen[4];
@@ -125,6 +128,8 @@ int math_log(lua_State* L) {
     }
     return 1;
 }
+
+#endif  // !B360_LUAJIT
 
 // ------------------------------------------------------------------ jit stub
 int jit_noop(lua_State* L) {
@@ -246,6 +251,15 @@ const luaL_Reg kOs[] = {
 }  // namespace
 
 void open_compat(lua_State* L) {
+    // os (both Lua flavours: only uses functions the 360 CRT has)
+    luaL_register(L, "os", kOs);
+    lua_pop(L, 1);
+
+#if defined(B360_LUAJIT)
+    // LuaJIT provides math.random, math.log(x, base), bit and jit itself.
+    (void)jit_noop;
+    (void)jit_status;
+#else
     // math.random / math.randomseed (LuaJIT TW223), math.log(x, base)
     lua_getglobal(L, "math");
     RandomState* rs = (RandomState*)lua_newuserdata(L, sizeof(RandomState));
@@ -257,10 +271,6 @@ void open_compat(lua_State* L) {
     lua_setfield(L, -2, "randomseed");
     lua_pushcfunction(L, math_log);
     lua_setfield(L, -2, "log");
-    lua_pop(L, 1);
-
-    // os
-    luaL_register(L, "os", kOs);
     lua_pop(L, 1);
 
     // bit (also available through require "bit")
@@ -297,6 +307,7 @@ void open_compat(lua_State* L) {
     lua_pushvalue(L, -3);
     lua_setfield(L, -2, "jit");
     lua_pop(L, 3);
+#endif
 }
 
 }  // namespace rt

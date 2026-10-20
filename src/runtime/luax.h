@@ -2,11 +2,23 @@
 #ifndef B360_LUAX_H
 #define B360_LUAX_H
 
-// Lua is compiled as C++ (errors are C++ exceptions, so destructors run
+#if defined(B360_LUAJIT)
+// LuaJIT is a C library. Its errors unwind with longjmp on the 360, so code
+// must never hold a lock (or other state needing cleanup) across a call that
+// can raise a Lua error.
+extern "C" {
+#include "lua.h"
+#include "lauxlib.h"
+#include "lualib.h"
+#include "luajit.h"
+}
+#else
+// PUC Lua is compiled as C++ (errors are C++ exceptions, so destructors run
 // when a Lua error unwinds through our code). Do not wrap in extern "C".
 #include "lua.h"
 #include "lauxlib.h"
 #include "lualib.h"
+#endif
 
 #include "object.h"
 #include <string>

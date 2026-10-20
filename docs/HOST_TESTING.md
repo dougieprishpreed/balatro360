@@ -11,7 +11,12 @@ sudo apt install build-essential libosmesa6-dev python3
 make -j            # out/host/b360 and out/host/b360-shadertool
 make GFX=null      # out/host-null/b360 (no rendering)
 make ppc           # out/ppc/b360: big-endian PowerPC, run with qemu-ppc
+make LUA=luajit    # out/host-luajit/b360: system LuaJIT (libluajit-5.1-dev),
+                   # JIT disabled like on the 360 (B360_JIT=1 to enable)
 ```
+
+`tools/test_rng.sh [binary] [runner]` checks that `math.random` & co. match
+LuaJIT exactly (`tools/test_rng.sh out/ppc/b360 qemu-ppc` for big-endian).
 
 The `ppc` build needs `g++-powerpc-linux-gnu` and `qemu-user`. It runs the
 whole game on a big-endian CPU like the 360's, which catches byte-order bugs

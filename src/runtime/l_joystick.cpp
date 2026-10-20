@@ -74,9 +74,14 @@ int j_getGamepadAxis(lua_State* L) {
     return 1;
 }
 
+plat::PadState snapshot(Joystick* j) {
+    plat::Lock lock(padMutex());
+    return j->state;
+}
+
 int j_isGamepadDown(lua_State* L) {
     Joystick* j = checkJoystick(L, 1);
-    plat::Lock lock(padMutex());
+    plat::PadState st = snapshot(j);   // no Lua calls while holding the lock
     int n = lua_gettop(L);
     for (int i = 2; i <= n; ++i) {
         int b;
@@ -86,7 +91,7 @@ int j_isGamepadDown(lua_State* L) {
                 lua_rawgeti(L, i, k);
                 b = buttonIndex(luaL_checkstring(L, -1));
                 lua_pop(L, 1);
-                if (b >= 0 && j->state.buttons[b]) {
+                if (b >= 0 && st.buttons[b]) {
                     lua_pushboolean(L, 1);
                     return 1;
                 }
@@ -94,7 +99,7 @@ int j_isGamepadDown(lua_State* L) {
             continue;
         }
         b = buttonIndex(luaL_checkstring(L, i));
-        if (b >= 0 && j->state.buttons[b]) {
+        if (b >= 0 && st.buttons[b]) {
             lua_pushboolean(L, 1);
             return 1;
         }
@@ -105,10 +110,10 @@ int j_isGamepadDown(lua_State* L) {
 
 int j_isDown(lua_State* L) {
     Joystick* j = checkJoystick(L, 1);
-    plat::Lock lock(padMutex());
+    plat::PadState st = snapshot(j);
     for (int i = 2; i <= lua_gettop(L); ++i) {
         int b = (int)luaL_checknumber(L, i) - 1;
-        if (b >= 0 && b < plat::PAD_BUTTON_COUNT && j->state.buttons[b]) {
+        if (b >= 0 && b < plat::PAD_BUTTON_COUNT && st.buttons[b]) {
             lua_pushboolean(L, 1);
             return 1;
         }

@@ -10,6 +10,14 @@
       <Configuration>Release</Configuration>
       <Platform>Xbox 360</Platform>
     </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug LuaJIT|Xbox 360">
+      <Configuration>Debug LuaJIT</Configuration>
+      <Platform>Xbox 360</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release LuaJIT|Xbox 360">
+      <Configuration>Release LuaJIT</Configuration>
+      <Platform>Xbox 360</Platform>
+    </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{7A1F3C52-8E4B-4B0B-9C3D-0B4E1A5E3600}</ProjectGuid>
@@ -22,6 +30,15 @@
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Xbox 360'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <CharacterSet>MultiByte</CharacterSet>
     <WholeProgramOptimization>true</WholeProgramOptimization>
@@ -48,6 +65,22 @@
     <ImageXexOutput>$(OutDir)default.xex</ImageXexOutput>
     <RemoteRoot>devkit:\Balatro360</RemoteRoot>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">
+    <OutDir>$(SolutionDir)out\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)obj\$(Configuration)\</IntDir>
+    <TargetName>default</TargetName>
+    <LinkIncremental>false</LinkIncremental>
+    <ImageXexOutput>$(OutDir)default.xex</ImageXexOutput>
+    <RemoteRoot>devkit:\Balatro360</RemoteRoot>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">
+    <OutDir>$(SolutionDir)out\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)obj\$(Configuration)\</IntDir>
+    <TargetName>default</TargetName>
+    <LinkIncremental>false</LinkIncremental>
+    <ImageXexOutput>$(OutDir)default.xex</ImageXexOutput>
+    <RemoteRoot>devkit:\Balatro360</RemoteRoot>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Xbox 360'">
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
@@ -59,7 +92,7 @@
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
       <PreprocessorDefinitions>_DEBUG;_XBOX;LUA_ANSI;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\..\src;..\..\third_party\lua\src;..\..\third_party\stb;..\..\third_party\miniz;..\..\third_party\luabitop;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\src;..\..\third_party\stb;..\..\third_party\miniz;..\..\third_party\lua\src;..\..\third_party\luabitop;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ProgramDataBaseFileName>$(IntDir)vc$(PlatformToolsetVersion).pdb</ProgramDataBaseFileName>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
@@ -85,7 +118,7 @@
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
       <PreprocessorDefinitions>NDEBUG;_XBOX;LUA_ANSI;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\..\src;..\..\third_party\lua\src;..\..\third_party\stb;..\..\third_party\miniz;..\..\third_party\luabitop;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\src;..\..\third_party\stb;..\..\third_party\miniz;..\..\third_party\lua\src;..\..\third_party\luabitop;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ProgramDataBaseFileName>$(IntDir)vc$(PlatformToolsetVersion).pdb</ProgramDataBaseFileName>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
@@ -100,141 +133,247 @@
       <DeploymentType>CopyToHardDrive</DeploymentType>
     </Deploy>
   </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <StringPooling>true</StringPooling>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <PreprocessorDefinitions>_DEBUG;_XBOX;B360_LUAJIT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\..\src;..\..\third_party\stb;..\..\third_party\miniz;..\..\third_party\luajit\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ProgramDataBaseFileName>$(IntDir)vc$(PlatformToolsetVersion).pdb</ProgramDataBaseFileName>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ProgramDatabaseFile>$(OutDir)$(ProjectName).pdb</ProgramDatabaseFile>
+      <AdditionalDependencies>..\..\third_party\luajit\src\luajit20.lib;xapilibd.lib;d3d9d.lib;d3dx9d.lib;xgraphicsd.lib;xboxkrnl.lib;xnetd.lib;xaudiod2.lib;x3daudiod.lib;xmcored.lib;xbdm.lib;vcompd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OptimizeReferences>false</OptimizeReferences>
+      <SetChecksum>true</SetChecksum>
+    </Link>
+    <Deploy>
+      <DeploymentType>CopyToHardDrive</DeploymentType>
+    </Deploy>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Full</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <StringPooling>true</StringPooling>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <PreprocessorDefinitions>NDEBUG;_XBOX;B360_LUAJIT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\..\src;..\..\third_party\stb;..\..\third_party\miniz;..\..\third_party\luajit\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ProgramDataBaseFileName>$(IntDir)vc$(PlatformToolsetVersion).pdb</ProgramDataBaseFileName>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ProgramDatabaseFile>$(OutDir)$(ProjectName).pdb</ProgramDatabaseFile>
+      <AdditionalDependencies>..\..\third_party\luajit\src\luajit20.lib;xapilib.lib;d3d9.lib;d3dx9.lib;xgraphics.lib;xboxkrnl.lib;xnet.lib;xaudio2.lib;x3daudio.lib;xmcore.lib;vcomp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OptimizeReferences>true</OptimizeReferences>
+      <SetChecksum>true</SetChecksum>
+    </Link>
+    <Deploy>
+      <DeploymentType>CopyToHardDrive</DeploymentType>
+    </Deploy>
+  </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\..\third_party\lua\src\lapi.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\lauxlib.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\lbaselib.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\lcode.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\ldblib.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\ldebug.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\ldo.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\ldump.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\lfunc.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\lgc.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\llex.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\lmathlib.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\lmem.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\loadlib.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\lobject.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\lopcodes.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\lparser.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\lstate.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\lstring.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\lstrlib.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\ltable.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\ltablib.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\ltm.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\lundump.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\lvm.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\lua\src\lzio.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\luabitop\bit.c">
       <CompileAs>CompileAsCpp</CompileAs>
       <FloatingPointModel>Strict</FloatingPointModel>
       <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug LuaJIT|Xbox 360'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release LuaJIT|Xbox 360'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\third_party\miniz\miniz.c">
       <CompileAs>CompileAsC</CompileAs>
