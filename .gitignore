@@ -1,0 +1,14 @@
+# build output
+out/
+build/xbox360/*/
+*.user
+*.suo
+*.sdf
+*.opensdf
+ipch/
+
+# never commit game data
+/game/
+/save/
+*.love
+Balatro.exe
