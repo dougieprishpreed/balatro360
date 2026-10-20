@@ -55,6 +55,7 @@ Font::Font(gfx::Device* d, const std::string& path, float sz, gfx::Filter mi, gf
 void Font::ensure() {
     if (loaded) return;
     loaded = true;
+    double t0 = plat::getTime();
     if (!fs::read(name, ttf) || ttf.empty()) {
         plat::log("[font] could not read %s", name.c_str());
         return;
@@ -82,6 +83,7 @@ void Font::ensure() {
     // reading, which on the 360 waits for the GPU to finish all queued work
     // (a visible hitch the first time new text appears mid-game).
     for (u32 c = 32; c < 127; ++c) glyph(c);
+    plat::log("[font] loaded %s (%.0f px) in %.0f ms", name.c_str(), size, (plat::getTime() - t0) * 1000.0);
 }
 
 Font::~Font() {

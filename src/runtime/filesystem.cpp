@@ -6,7 +6,12 @@ namespace rt {
 namespace fs {
 
 namespace {
-plat::Mutex& fsMutex() {
+// Serialises writers (Balatro's save thread vs. deletes from the game
+// thread). Reads, stats and listings take no lock: the platform calls are
+// thread safe, and a read must never wait for another thread's file I/O.
+// (A global lock here made the game thread wait whenever the sound thread
+// loaded a multi-megabyte music track from USB.)
+plat::Mutex& writeMutex() {
     static plat::Mutex m;
     return m;
 }
@@ -39,10 +44,23 @@ bool normalize(const std::string& in, std::string& out) {
 static std::string savePath(const std::string& p) { return plat::joinPath(plat::saveRoot(), p); }
 static std::string sourcePath(const std::string& p) { return plat::joinPath(plat::sourceRoot(), p); }
 
+// Logs file operations slow enough to cause a visible hitch if they happen
+// on the game thread (the log names the file, so hitches can be traced).
+struct SlowOpLog {
+    const char* what;
+    const std::string& path;
+    double t0;
+    SlowOpLog(const char* w, const std::string& p) : what(w), path(p), t0(plat::getTime()) {}
+    ~SlowOpLog() {
+        double ms = (plat::getTime() - t0) * 1000.0;
+        if (ms >= 50.0) plat::log("[fs] %s %s took %.0f ms", what, path.c_str(), ms);
+    }
+};
+
 bool read(const std::string& path, std::vector<u8>& out) {
     std::string p;
     if (!normalize(path, p) || p.empty()) return false;
-    plat::Lock lock(fsMutex());
+    SlowOpLog slow("reading", p);
     if (plat::fileRead(savePath(p), out)) return true;
     return plat::fileRead(sourcePath(p), out);
 }
@@ -57,7 +75,8 @@ bool read(const std::string& path, std::string& out) {
 bool write(const std::string& path, const void* data, size_t size, bool append) {
     std::string p;
     if (!normalize(path, p) || p.empty()) return false;
-    plat::Lock lock(fsMutex());
+    SlowOpLog slow("writing", p);
+    plat::Lock lock(writeMutex());
     size_t slash = p.rfind('/');
     if (slash != std::string::npos) plat::dirCreate(savePath(p.substr(0, slash)));
     return plat::fileWrite(savePath(p), data, size, append);
@@ -66,21 +85,20 @@ bool write(const std::string& path, const void* data, size_t size, bool append) 
 bool remove(const std::string& path) {
     std::string p;
     if (!normalize(path, p) || p.empty()) return false;
-    plat::Lock lock(fsMutex());
+    plat::Lock lock(writeMutex());
     return plat::fileRemove(savePath(p));
 }
 
 bool createDirectory(const std::string& path) {
     std::string p;
     if (!normalize(path, p)) return false;
-    plat::Lock lock(fsMutex());
+    plat::Lock lock(writeMutex());
     return plat::dirCreate(savePath(p));
 }
 
 bool info(const std::string& path, plat::PathInfo& out) {
     std::string p;
     if (!normalize(path, p)) return false;
-    plat::Lock lock(fsMutex());
     if (p.empty()) {
         out.type = plat::PATH_DIR;
         out.size = 0;
@@ -94,7 +112,6 @@ bool info(const std::string& path, plat::PathInfo& out) {
 void list(const std::string& path, std::vector<std::string>& names) {
     std::string p;
     if (!normalize(path, p)) return;
-    plat::Lock lock(fsMutex());
     std::vector<std::string> a, b;
     plat::dirList(savePath(p), a);
     plat::dirList(sourcePath(p), b);

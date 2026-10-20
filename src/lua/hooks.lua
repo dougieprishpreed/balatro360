@@ -161,6 +161,18 @@ hooks["game"] = function()
 		apply_console_flags(self)
 		return r
 	end
+	-- Fonts load on first use (Balatro creates one per language, 60+ MB in
+	-- total). Load the current language's font while the game is still
+	-- starting up, instead of when the main menu first shows text.
+	if type(Game.set_language) == "function" then
+		local orig_set_language = Game.set_language
+		Game.set_language = function(self, ...)
+			local r = orig_set_language(self, ...)
+			local font = self.LANG and self.LANG.font and self.LANG.font.FONT
+			if font then pcall(font.getWidth, font, "0") end
+			return r
+		end
+	end
 end
 
 -- Performance: Balatro's classes (engine/object.lua, the SNKRX/classic

@@ -162,6 +162,12 @@ rasterised at most 64px and scaled; this saves memory with no visible
 difference at 720p. Metrics follow FreeType's rounding (ascender rounded up,
 descender down, advances rounded) to keep text layout close to PC.
 
+Fonts load lazily (Balatro creates one per language, 60+ MB of CJK fonts)
+except for the current language's font, which `hooks.lua` loads during
+start-up. Loading rasterises printable ASCII straight away: adding a glyph
+later means writing to an atlas the GPU may be reading, which on the 360
+waits for the GPU to finish all queued work.
+
 ## Audio
 
 `src/runtime/l_audio.cpp` is a software mixer: sources are resampled with
@@ -186,7 +192,11 @@ game on 0.
 ## File system
 
 Game paths are `/`-separated and relative. Reads check the save folder first,
-then the game folder; writes always go to the save folder. Directory listings
+then the game folder; writes always go to the save folder. Reads take no lock, so the
+game thread never waits for another thread's file I/O (Balatro's sound
+thread loads multi-megabyte music tracks, its save thread writes saves);
+only writers are serialised. Reads or writes slower than 50 ms are noted in
+the log (`[fs]`). Directory listings
 are merged and sorted (like PhysFS). Save files use LÖVE's formats
 (`love.data.compress` raw deflate via miniz), so PC saves are compatible.
 
