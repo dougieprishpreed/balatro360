@@ -92,7 +92,8 @@ ppc:
 	$(MAKE) GFX=null CROSS=powerpc-linux-gnu- OUT=out/ppc LDFLAGS=-static
 
 # Big-endian PowerPC + LuaJIT interpreter, the closest match to the 360's
-# "Release LuaJIT" build. LJ points at a LuaJIT 2.1 tree cross-built with:
+# "Release LuaJIT" build. LJ points at a LuaJIT 2.0 tree (the branch the 360
+# uses) cross-built with:
 #   make HOST_CC="gcc -m32" CROSS=powerpc-linux-gnu- TARGET_SYS=Linux BUILDMODE=static \
 #        XCFLAGS="-DLUAJIT_DISABLE_JIT -DLUAJIT_NUMMODE=2 -DLUAJIT_USE_SYSMALLOC -ffp-contract=off"
 # (-ffp-contract=off matches /fp:strict in tools/xbox360/build_luajit.bat; without it

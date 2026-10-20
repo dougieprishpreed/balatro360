@@ -66,10 +66,15 @@ interpreter, written in PowerPC assembly; there is no JIT on the console),
 which runs Balatro about **2x faster**. LuaJIT is also what the PC version
 runs on, so game behaviour matches PC exactly. One-time setup:
 
-1. Download <https://github.com/LuaJIT/LuaJIT/archive/refs/heads/v2.1.zip>,
-   extract it, and rename the extracted `LuaJIT-2.1` folder so that it is
+1. Download **LuaJIT 2.0**:
+   <https://github.com/LuaJIT/LuaJIT/archive/refs/heads/v2.0.zip>, extract it,
+   and rename the extracted `LuaJIT-2.0` folder so that it is
    `third_party\luajit` inside the project (so `third_party\luajit\src\lj_vm.h`
-   exists). Updating the Balatro360 zip never touches this folder.
+   exists). If you previously put LuaJIT 2.1 there, delete that folder first.
+   It must be 2.0: LuaJIT 2.1 removed the PowerPC code its Xbox 360 build
+   needs, so 2.1's `xedkbuild.bat` fails. 2.0 is the maintained stable branch
+   and runs Balatro the same way. Updating the Balatro360 zip never touches
+   this folder.
 
 2. Open **Visual Studio Command Prompt (2010)** (the 32-bit one, with the XDK
    installed so `XEDK` is set), go to the project folder and run:
@@ -82,9 +87,9 @@ runs on, so game behaviour matches PC exactly. One-time setup:
    leave `luajit20.lib` in `third_party\luajit\src`. Attach the output here if
    it doesn't.
 
-   This is LuaJIT's own `xedkbuild.bat` with one flag added (`/fp:strict`,
-   so the compiler can't fuse multiply-adds; otherwise some seeds give
-   different random numbers than on PC). Use the Visual Studio prompt, not
+   This is LuaJIT 2.0's own `xedkbuild.bat` with `/fp:strict` added (so the
+   compiler can't fuse multiply-adds; otherwise some seeds give different
+   random numbers than on PC) and `LUA_BUILD_AS_DLL` removed (static link). Use the Visual Studio prompt, not
    the Xbox 360 Command Prompt: the script first builds small helper tools
    for your PC with the plain `cl` on `PATH`, and only then calls the XDK's
    cross compiler through `%XEDK%`.

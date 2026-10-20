@@ -19,7 +19,7 @@ the parts of the LÖVE 11 API the game uses, on top of the Xbox 360 XDK:
 
 | LÖVE piece | Balatro360 replacement |
 |---|---|
-| LuaJIT 2.1 | Either LuaJIT's own Xbox 360 interpreter build (recommended, about 2x faster) or PUC Lua 5.1.5 with a LuaJIT compatibility layer (`bit`, `jit`, LuaJIT's exact `math.random`, `math.log(x, base)`) |
+| LuaJIT 2.1 | Either LuaJIT 2.0's own Xbox 360 interpreter build (recommended, about 2x faster) or PUC Lua 5.1.5 with a LuaJIT compatibility layer (`bit`, `jit`, LuaJIT's exact `math.random`, `math.log(x, base)`) |
 | OpenGL + GLSL shaders | Direct3D 9 on Xenos; the game's GLSL shaders are translated to HLSL at load time |
 | OpenAL + libvorbis | A software mixer feeding XAudio2; Ogg Vorbis via stb_vorbis |
 | SDL game controllers | XInput, exposed through `love.joystick` with the gamepad API |
@@ -53,7 +53,7 @@ big-endian PowerPC.
 ## Quick start
 
 1. **Build the XEX** with Visual Studio 2010 and the Xbox 360 XDK: put
-   LuaJIT 2.1 in `third_party\luajit`, run `tools\xbox360\build_luajit.bat`,
+   LuaJIT 2.0 in `third_party\luajit`, run `tools\xbox360\build_luajit.bat`,
    then build `build/xbox360/Balatro360.sln` as `Release LuaJIT | Xbox 360`.
    (`Release` builds without LuaJIT, using the slower Lua 5.1.)
    Full instructions: [docs/BUILDING_XDK.md](docs/BUILDING_XDK.md).

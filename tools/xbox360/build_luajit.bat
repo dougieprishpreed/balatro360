@@ -1,19 +1,28 @@
 @rem Balatro360: builds LuaJIT for the Xbox 360 "LuaJIT" configurations.
 @rem
-@rem This is LuaJIT's own src\xedkbuild.bat (public domain) with one change:
-@rem the Xbox 360 compile uses /fp:strict. Without it the compiler fuses
-@rem multiply-adds in LuaJIT's C code (e.g. math.randomseed), which changes
-@rem random numbers compared to the PC version and breaks seed parity.
-@rem It also drops /DLUA_BUILD_AS_DLL: we link LuaJIT statically into the
-@rem XEX, and dllexport'ed API functions would give the XEX an export table.
+@rem Requires LuaJIT 2.0 (the v2.0 branch) in third_party\luajit. LuaJIT 2.1
+@rem removed the PowerPC object-file writer the Xbox 360 build needs, so its
+@rem leftover xedkbuild.bat cannot work.
+@rem
+@rem This is LuaJIT 2.0's own src\xedkbuild.bat (public domain) with two
+@rem changes:
+@rem  * the Xbox 360 compile uses /fp:strict. Without it the compiler fuses
+@rem    multiply-adds in LuaJIT's C code (e.g. math.randomseed), which changes
+@rem    random numbers compared to the PC version and breaks seed parity.
+@rem  * no /DLUA_BUILD_AS_DLL: LuaJIT is linked statically into the XEX, and
+@rem    dllexport'ed API functions would give the XEX an export table.
 @rem
 @rem Usage: open "Visual Studio Command Prompt (2010)" (32 bit) and run
 @rem   tools\xbox360\build_luajit.bat
-@rem LuaJIT 2.1 must be extracted to third_party\luajit (third_party\luajit\src
-@rem must exist). Produces third_party\luajit\src\luajit20.lib.
+@rem Produces third_party\luajit\src\luajit20.lib.
 
 @if not exist "%~dp0..\..\third_party\luajit\src\lj_vm.h" (
   @echo LuaJIT not found in third_party\luajit. See docs\BUILDING_XDK.md.
+  @exit /b 1
+)
+@if exist "%~dp0..\..\third_party\luajit\src\lib_buffer.c" (
+  @echo third_party\luajit contains LuaJIT 2.1, which can no longer build for
+  @echo the Xbox 360. Replace it with LuaJIT 2.0, see docs\BUILDING_XDK.md.
   @exit /b 1
 )
 @pushd "%~dp0..\..\third_party\luajit\src"
@@ -22,7 +31,7 @@
 @exit /b
 
 :BUILD
-@rem ---- LuaJIT's xedkbuild.bat follows ----
+@rem ---- LuaJIT 2.0's xedkbuild.bat follows ----
 @rem Script to build LuaJIT with the Xbox 360 SDK.
 @rem Donated to the public domain.
 @rem
@@ -39,7 +48,7 @@
 @set LJMT=mt /nologo
 @set DASMDIR=..\dynasm
 @set DASM=%DASMDIR%\dynasm.lua
-@set ALL_LIB=lib_base.c lib_math.c lib_bit.c lib_string.c lib_table.c lib_io.c lib_os.c lib_package.c lib_debug.c lib_jit.c lib_ffi.c lib_buffer.c
+@set ALL_LIB=lib_base.c lib_math.c lib_bit.c lib_string.c lib_table.c lib_io.c lib_os.c lib_package.c lib_debug.c lib_jit.c lib_ffi.c
 
 %LJCOMPILE% host\minilua.c
 @if errorlevel 1 goto :BAD

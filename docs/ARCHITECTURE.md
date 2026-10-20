@@ -23,13 +23,15 @@ renderer differ between the Xbox 360 and the Linux development build.
 
 The runtime only uses the Lua 5.1 C API, so it builds against either:
 
-* **LuaJIT 2.1** (`B360_LUAJIT`): LuaJIT's official Xbox 360 build
+* **LuaJIT 2.0** (`B360_LUAJIT`): LuaJIT's official Xbox 360 build
   (`src/xedkbuild.bat`, interpreter only, VM in PowerPC assembly). This is the
   fast option (about 2x PUC Lua on the Balatro workload) and is LuaJIT
   itself, so behaviour matches PC exactly. LuaJIT unwinds errors with longjmp
   there, so runtime code never holds locks across calls that can raise Lua
   errors.
-* **PUC Lua 5.1.5** (default), described below.
+* **PUC Lua 5.1.5** (default), described below. LuaJIT 2.1 removed the PowerPC PE
+  object writer that build needs (2020), so the 360 uses the maintained 2.0
+  branch; both share the same random number generator and `math.log`.
 
 * **PUC Lua 5.1.5**, compiled **as C++** so that Lua errors are C++ exceptions
   and unwind our C++ frames correctly (RAII locks, std::string temporaries).
