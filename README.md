@@ -76,13 +76,19 @@ Balatro's own controller support is used unchanged (A select, B back, etc.).
 
 ### Configuration
 
-Create `game\b360_config.lua` on the console to override the game's
-feature flags, for example:
+Create `game\b360_config.lua` on the console to change settings, for
+example:
 
 ```lua
 return {
-    F_RUMBLE = 1.0,      -- controller rumble strength (0 to disable)
-    F_HIDE_BG = false,   -- keep drawing the board while paused
+    -- Balatro's own feature flags (F_*)
+    F_RUMBLE = 1.0,         -- controller rumble strength (0 to disable)
+    F_HIDE_BG = false,      -- keep drawing the board while paused
+
+    -- Balatro360 options (B360_*)
+    B360_SAFE_AREA = 0.92,  -- shrink the picture if your TV crops the edges
+    B360_SHOW_FPS = true,   -- FPS / frame time overlay
+    B360_LOG_PERF = true,   -- average and worst frame time in b360.log every 10 s
 }
 ```
 

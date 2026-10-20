@@ -7,6 +7,27 @@
 
 local hooks = {}
 
+-- b360_config.lua in the game folder may return a table of settings:
+--   F_* keys override the game's feature flags (e.g. F_RUMBLE = 1.0),
+--   B360_* keys are runtime options:
+--     B360_SHOW_FPS = true    FPS / frame time overlay in the top left corner
+--     B360_LOG_PERF = true    log average/worst frame time every 10 s
+--     B360_SAFE_AREA = 0.9    shrink the picture for TVs that crop the edges
+local user_config
+local function config()
+	if user_config then return user_config end
+	user_config = {}
+	if love.filesystem.getInfo("b360_config.lua") then
+		local ok, cfg = pcall(function() return love.filesystem.load("b360_config.lua")() end)
+		if ok and type(cfg) == "table" then
+			user_config = cfg
+		elseif not ok then
+			print("b360_config.lua: " .. tostring(cfg))
+		end
+	end
+	return user_config
+end
+
 -- Platform feature flags, applied right after Game:set_globals() runs.
 local function apply_console_flags(G)
 	G.F_VIDEO_SETTINGS = false   -- window modes are meaningless on a TV
@@ -25,15 +46,48 @@ local function apply_console_flags(G)
 		G.F_DISP_USERNAME = name
 	end
 
-	-- User overrides: b360_config.lua in the game folder may return a table
-	-- of flags, e.g. return { F_RUMBLE = 1.0 }.
-	if love.filesystem.getInfo("b360_config.lua") then
-		local ok, cfg = pcall(function() return love.filesystem.load("b360_config.lua")() end)
-		if ok and type(cfg) == "table" then
-			for k, v in pairs(cfg) do G[k] = v end
-		elseif not ok then
-			print("b360_config.lua: " .. tostring(cfg))
+	for k, v in pairs(config()) do
+		if type(k) == "string" and k:sub(1, 2) == "F_" then G[k] = v end
+	end
+end
+
+-- Optional performance overlay / logging, for testing on hardware.
+local function install_perf_tools(cfg)
+	if not (cfg.B360_SHOW_FPS or cfg.B360_LOG_PERF) then return end
+	local graphics = love.graphics
+	local present = graphics.present
+	local last = love.timer.getTime()
+	local shown_ms, acc, worst, frames, window_start = 0, 0, 0, 0, last
+	local font
+	graphics.present = function(...)
+		local now = love.timer.getTime()
+		local ms = (now - last) * 1000
+		last = now
+		acc = acc + ms
+		frames = frames + 1
+		if ms > worst then worst = ms end
+		shown_ms = shown_ms * 0.9 + ms * 0.1
+		if now - window_start >= 10 then
+			if cfg.B360_LOG_PERF then
+				print(string.format("[perf] %d frames, avg %.1f ms (%.1f fps), worst %.1f ms, Lua heap %.1f MB",
+					frames, acc / frames, 1000 * frames / acc, worst, collectgarbage("count") / 1024))
+			end
+			acc, worst, frames, window_start = 0, 0, 0, now
 		end
+		if cfg.B360_SHOW_FPS then
+			font = font or graphics.newFont("resources/fonts/m6x11plus.ttf", 24)
+			graphics.push("all")
+			graphics.setCanvas()
+			graphics.setShader()
+			graphics.origin()
+			local text = string.format("%d FPS  %.1f ms", love.timer.getFPS(), shown_ms)
+			graphics.setColor(0, 0, 0, 0.6)
+			graphics.rectangle("fill", 8, 8, font:getWidth(text) + 16, font:getHeight() + 8)
+			graphics.setColor(1, 1, 1, 1)
+			graphics.print(text, font, 16, 12)
+			graphics.pop()
+		end
+		return present(...)
 	end
 end
 
@@ -86,6 +140,11 @@ end
 function love._b360_postmain()
 	local copied, n = flatten_classes()
 	print(string.format("[b360] flattened %d methods into %d classes", copied or 0, n or 0))
+	local cfg = config()
+	if type(cfg.B360_SAFE_AREA) == "number" and love.graphics._b360_setSafeArea then
+		love.graphics._b360_setSafeArea(cfg.B360_SAFE_AREA)
+	end
+	install_perf_tools(cfg)
 end
 
 -- Wrap require so hooks run once their module has loaded.

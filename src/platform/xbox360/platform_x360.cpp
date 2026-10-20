@@ -87,11 +87,15 @@ bool pump() {
 
 void log(const char* fmt, ...) {
     char buf[2048];
+    // Seconds since start, so b360.log shows load times and stalls.
+    int pre = snprintf(buf, 32, "[%8.3f] ", getTime());
+    if (pre < 0 || pre > 31) pre = 0;
     va_list ap;
     va_start(ap, fmt);
-    int n = vsnprintf(buf, sizeof(buf) - 2, fmt, ap);
+    int n = vsnprintf(buf + pre, sizeof(buf) - 2 - pre, fmt, ap);
     va_end(ap);
-    if (n < 0 || n > (int)sizeof(buf) - 3) n = (int)strlen(buf);
+    if (n < 0 || n > (int)sizeof(buf) - 3 - pre) n = (int)strlen(buf + pre);
+    n += pre;
     buf[n++] = '\r';
     buf[n++] = '\n';
     buf[n] = 0;
@@ -377,9 +381,17 @@ void padPoll(PadState pads[MAX_PADS]) {
 }
 
 void padVibrate(int pad, float left, float right) {
+    // Balatro sets the vibration every frame; only talk to the controller
+    // when the value actually changes.
+    static WORD lastL[MAX_PADS] = {0, 0, 0, 0};
+    static WORD lastR[MAX_PADS] = {0, 0, 0, 0};
+    if (pad < 0 || pad >= MAX_PADS) return;
     XINPUT_VIBRATION v;
     v.wLeftMotorSpeed = (WORD)(left * 65535.0f);
     v.wRightMotorSpeed = (WORD)(right * 65535.0f);
+    if (v.wLeftMotorSpeed == lastL[pad] && v.wRightMotorSpeed == lastR[pad]) return;
+    lastL[pad] = v.wLeftMotorSpeed;
+    lastR[pad] = v.wRightMotorSpeed;
     XInputSetState((DWORD)pad, &v);
 }
 

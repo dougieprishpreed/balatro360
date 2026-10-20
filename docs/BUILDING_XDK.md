@@ -151,6 +151,15 @@ Xenia runs `default.xex` directly; keep the `game\` folder next to it.
   `b360.log` may be missing. In Xenia Canary, setting
   `allow_game_relative_writes = true` in `xenia-canary.config.toml` should
   allow it.
+* Lines like `Unimplemented instruction: InstrEmit_addx` / `mullwx` /
+  `subfx` in `xenia.log` are expected: LuaJIT's PowerPC interpreter uses
+  the overflow-checking forms of those instructions, which Xenia's
+  recompiler doesn't implement yet. Real hardware has them.
+* A very large `xenia.log` full of `d>` lines means kernel call logging is
+  on; lowering Xenia's log level (`log_level` in its config) keeps it small.
+  `b360.log` only contains the runtime's own messages.
+* Frame rate in Xenia says little about the console; for real numbers use
+  `B360_LOG_PERF = true` in `game\b360_config.lua` on hardware (see README).
 
 ## 5. Reporting results back
 

@@ -234,6 +234,13 @@ public:
     }
 
     virtual Shader* createShader(const std::string& source, std::string& err) {
+        double t0 = plat::getTime();
+        Shader* s = compileShader(source, err);
+        if (s) plat::log("[d3d] shader compiled in %.0f ms", (plat::getTime() - t0) * 1000.0);
+        return s;
+    }
+
+    Shader* compileShader(const std::string& source, std::string& err) {
         LoveShaderInfo info;
         analyzeLoveShader(source, info);
         std::vector<std::string> warnings;

@@ -10,6 +10,7 @@
 #include <math.h>
 #include <string.h>
 #include <algorithm>
+#include <map>
 
 #define STB_VORBIS_HEADER_ONLY
 #include "stb_vorbis.c"
@@ -34,6 +35,7 @@ public:
     int channels;
     int rate;
     double duration;
+    u64 totalFrames;
 };
 
 plat::Mutex& mixMutex() {
@@ -81,6 +83,11 @@ public:
         return vorbis != NULL;
     }
 
+    u64 totalFrames() const {
+        if (isStatic) return buffer ? buffer->frames() : 0;
+        return stream ? stream->totalFrames : 0;
+    }
+
     double durationSeconds() const {
         if (isStatic) return buffer ? (double)buffer->frames() / rate : 0;
         return stream ? stream->duration : 0;
@@ -115,7 +122,7 @@ public:
             if (streamEOF) return false;
             // Keep the last frame of the old window for interpolation.
             u64 newStart = winStart + winFrames;
-            if (winFrames > 0 && f > newStart + 4096) {
+            if (f > newStart + 4096) {
                 // Large forward jump: seek.
                 if (stb_vorbis_seek(vorbis, (unsigned int)f)) newStart = f;
             }
@@ -145,6 +152,19 @@ public:
         double step = (double)rate / plat::AUDIO_RATE * pitch;
         float gain = volume * master;
         if (gain > 1.0f) gain = 1.0f;
+        if (gain <= 0.0f) {
+            // Silent: keep time moving without decoding. Balatro plays all
+            // music tracks at once and crossfades by volume, so most streams
+            // are silent most of the time; frameAt() seeks when one becomes
+            // audible again.
+            u64 total = totalFrames();
+            pos += step * frames;
+            if (total > 0 && pos >= (double)total) {
+                if (!looping) return false;
+                pos = fmod(pos, (double)total);
+            }
+            return true;
+        }
         for (int i = 0; i < frames; ++i) {
             u64 f0 = (u64)pos;
             float frac = (float)(pos - (double)f0);
@@ -162,10 +182,8 @@ public:
                 b[0] = a[0];
                 b[1] = a[1];
             }
-            if (gain > 0.0f) {
-                acc[i * 2] += (a[0] + (b[0] - a[0]) * frac) * gain;
-                acc[i * 2 + 1] += (a[1] + (b[1] - a[1]) * frac) * gain;
-            }
+            acc[i * 2] += (a[0] + (b[0] - a[0]) * frac) * gain;
+            acc[i * 2 + 1] += (a[1] + (b[1] - a[1]) * frac) * gain;
             pos += step;
         }
         return true;
@@ -243,6 +261,21 @@ void stopSource(Source* s) {
 }
 
 // --------------------------------------------------------------- decoding
+// Decoded sound effects and encoded music are cached by path: Balatro's sound
+// manager creates a new Source whenever all instances of a sound are busy,
+// and decoding the Ogg file again each time is expensive on the 360's CPU.
+plat::Mutex& cacheMutex() {
+    static plat::Mutex m;
+    return m;
+}
+std::map<std::string, Ref<SoundBuffer> >& bufferCache() {
+    static std::map<std::string, Ref<SoundBuffer> > m;
+    return m;
+}
+std::map<std::string, Ref<StreamData> >& streamCache() {
+    static std::map<std::string, Ref<StreamData> > m;
+    return m;
+}
 
 bool decodeStatic(const std::vector<u8>& file, SoundBuffer* buf) {
     int channels = 0, rate = 0;
@@ -256,64 +289,108 @@ bool decodeStatic(const std::vector<u8>& file, SoundBuffer* buf) {
     return true;
 }
 
-Source* newSourceFromFile(lua_State* L, const std::string& path, bool isStatic) {
+// Returns a new reference, or NULL (err set).
+SoundBuffer* loadSoundBuffer(const std::string& path, std::string& err) {
+    {
+        plat::Lock lock(cacheMutex());
+        std::map<std::string, Ref<SoundBuffer> >::iterator it = bufferCache().find(path);
+        if (it != bufferCache().end()) {
+            it->second->retain();
+            return it->second.get();
+        }
+    }
     std::vector<u8> file;
     if (!fs::read(path, file) || file.empty()) {
-        luaL_error(L, "Could not open file %s. Does not exist.", path.c_str());
+        err = "Could not open file " + path + ". Does not exist.";
         return NULL;
     }
+    SoundBuffer* buf = new SoundBuffer;
+    if (!decodeStatic(file, buf)) {
+        buf->release();
+        err = "Could not decode audio file " + path;
+        return NULL;
+    }
+    if (buf->channels > 2) {
+        // Downmix anything unusual to stereo by taking the first two channels.
+        std::vector<i16> st(buf->frames() * 2);
+        for (size_t f = 0; f < buf->frames(); ++f) {
+            st[f * 2] = buf->samples[f * buf->channels];
+            st[f * 2 + 1] = buf->samples[f * buf->channels + 1];
+        }
+        buf->samples.swap(st);
+        buf->channels = 2;
+    }
+    plat::Lock lock(cacheMutex());
+    bufferCache()[path] = buf;
+    return buf;
+}
+
+StreamData* loadStreamData(const std::string& path, std::string& err) {
+    {
+        plat::Lock lock(cacheMutex());
+        std::map<std::string, Ref<StreamData> >::iterator it = streamCache().find(path);
+        if (it != streamCache().end()) {
+            it->second->retain();
+            return it->second.get();
+        }
+    }
+    std::vector<u8> file;
+    if (!fs::read(path, file) || file.empty()) {
+        err = "Could not open file " + path + ". Does not exist.";
+        return NULL;
+    }
+    StreamData* sd = new StreamData;
+    sd->data.swap(file);
+    int verr = 0;
+    stb_vorbis* v = stb_vorbis_open_memory(&sd->data[0], (int)sd->data.size(), &verr, NULL);
+    if (!v) {
+        sd->release();
+        err = "Could not decode audio file " + path;
+        return NULL;
+    }
+    stb_vorbis_info info = stb_vorbis_get_info(v);
+    sd->channels = info.channels;
+    sd->rate = info.sample_rate;
+    sd->totalFrames = stb_vorbis_stream_length_in_samples(v);
+    sd->duration = info.sample_rate ? (double)sd->totalFrames / info.sample_rate : 0;
+    stb_vorbis_close(v);
+    if (sd->channels > 2) {
+        sd->release();
+        err = "Streaming sources with more than 2 channels are not supported (" + path + ")";
+        return NULL;
+    }
+    plat::Lock lock(cacheMutex());
+    streamCache()[path] = sd;
+    return sd;
+}
+
+// Returns a new Source reference; raises a Lua error on failure (no locks held).
+Source* newSourceFromFile(lua_State* L, const std::string& path, bool isStatic) {
+    std::string err;
     Source* s = new Source;
     s->isStatic = isStatic;
     if (isStatic) {
-        SoundBuffer* buf = new SoundBuffer;
-        if (!decodeStatic(file, buf)) {
+        SoundBuffer* buf = loadSoundBuffer(path, err);
+        if (buf) {
+            s->buffer = buf;
             buf->release();
-            s->release();
-            luaL_error(L, "Could not decode audio file %s", path.c_str());
-            return NULL;
+            s->channels = buf->channels > 1 ? 2 : 1;
+            s->rate = buf->rate;
         }
-        s->buffer = buf;
-        buf->release();
-        s->channels = buf->channels > 1 ? 2 : 1;
-        if (buf->channels > 2) {
-            // Downmix anything unusual to stereo by taking the first two channels.
-            std::vector<i16> st(buf->frames() * 2);
-            for (size_t f = 0; f < buf->frames(); ++f) {
-                st[f * 2] = buf->samples[f * buf->channels];
-                st[f * 2 + 1] = buf->samples[f * buf->channels + 1];
-            }
-            buf->samples.swap(st);
-            buf->channels = 2;
-        }
-        s->rate = buf->rate;
     } else {
-        StreamData* sd = new StreamData;
-        sd->data.swap(file);
-        int err = 0;
-        stb_vorbis* v = stb_vorbis_open_memory(&sd->data[0], (int)sd->data.size(), &err, NULL);
-        if (!v) {
+        StreamData* sd = loadStreamData(path, err);
+        if (sd) {
+            s->stream = sd;
             sd->release();
-            s->release();
-            luaL_error(L, "Could not decode audio file %s", path.c_str());
-            return NULL;
+            s->channels = sd->channels;
+            s->rate = sd->rate;
+            s->openStream();
         }
-        stb_vorbis_info info = stb_vorbis_get_info(v);
-        sd->channels = info.channels;
-        sd->rate = info.sample_rate;
-        unsigned int total = stb_vorbis_stream_length_in_samples(v);
-        sd->duration = info.sample_rate ? (double)total / info.sample_rate : 0;
-        stb_vorbis_close(v);
-        s->stream = sd;
-        sd->release();
-        s->channels = sd->channels > 1 ? 2 : 1;
-        s->rate = sd->rate;
-        if (sd->channels > 2) {
-            s->release();
-            luaL_error(L, "Streaming sources with more than 2 channels are not supported (%s)", path.c_str());
-            return NULL;
-        }
-        s->channels = sd->channels;
-        s->openStream();
+    }
+    if (!err.empty()) {
+        s->release();
+        luaL_error(L, "%s", err.c_str());
+        return NULL;
     }
     return s;
 }

@@ -32,17 +32,19 @@ enum AlignMode { ALIGN_LEFT = 0, ALIGN_CENTER, ALIGN_RIGHT, ALIGN_JUSTIFY };
 
 class Font : public Object {
 public:
-    // ttfData: raw .ttf contents (taken over by the font). size: pixel size.
-    Font(gfx::Device* dev, const std::string& name, std::vector<u8>& ttfData, float size,
-         gfx::Filter minF, gfx::Filter magF);
+    // path: .ttf file read through love.filesystem; size: pixel size.
+    // The file is only read when the font is first measured or drawn:
+    // Balatro creates fonts for every language (60+ MB of CJK fonts) at
+    // start-up but only ever uses one or two.
+    Font(gfx::Device* dev, const std::string& path, float size, gfx::Filter minF, gfx::Filter magF);
     ~Font();
 
-    bool valid() const { return ok; }
+    bool valid() { ensure(); return ok; }
 
-    float getHeight() const { return (float)height; }
-    float getAscent() const { return (float)ascent; }
-    float getDescent() const { return (float)descent; }
-    float getBaseline() const { return (float)ascent; }
+    float getHeight() { ensure(); return (float)height; }
+    float getAscent() { ensure(); return (float)ascent; }
+    float getDescent() { ensure(); return (float)descent; }
+    float getBaseline() { ensure(); return (float)ascent; }
     float getLineHeight() const { return lineHeight; }
     void setLineHeight(float h) { lineHeight = h; }
     float getWidth(const std::string& utf8);
@@ -74,6 +76,7 @@ private:
     };
 
     const Glyph& glyph(u32 cp);
+    void ensure();
     void addPage();
     float lineWidth(const std::vector<ColoredString>& line);
 
@@ -81,6 +84,7 @@ private:
     std::string name;
     std::vector<u8> ttf;
     void* info;   // stbtt_fontinfo
+    bool loaded;
     bool ok;
     float size;
     float scale;        // stbtt scale for the nominal size

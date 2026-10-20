@@ -1,5 +1,6 @@
 #include "font.h"
 
+#include "filesystem.h"
 #include "stb_truetype.h"
 
 #include <math.h>
@@ -47,16 +48,24 @@ u32 Font::decodeUTF8(const std::string& s, size_t& i) {
     return cp;
 }
 
-Font::Font(gfx::Device* d, const std::string& n, std::vector<u8>& data, float sz, gfx::Filter mi,
-           gfx::Filter ma)
-    : dev(d), name(n), info(NULL), ok(false), size(sz), scale(1), rasterScale(1), ascent(0),
-      descent(0), height(0), lineHeight(1), minF(mi), magF(ma), penX(0), penY(0), rowH(0) {
-    ttf.swap(data);
-    if (ttf.empty()) return;
+Font::Font(gfx::Device* d, const std::string& path, float sz, gfx::Filter mi, gfx::Filter ma)
+    : dev(d), name(path), info(NULL), loaded(false), ok(false), size(sz), scale(1), rasterScale(1),
+      ascent(0), descent(0), height(0), lineHeight(1), minF(mi), magF(ma), penX(0), penY(0), rowH(0) {}
+
+void Font::ensure() {
+    if (loaded) return;
+    loaded = true;
+    if (!fs::read(name, ttf) || ttf.empty()) {
+        plat::log("[font] could not read %s", name.c_str());
+        return;
+    }
     stbtt_fontinfo* fi = new stbtt_fontinfo;
     info = fi;
     int offset = stbtt_GetFontOffsetForIndex(&ttf[0], 0);
-    if (offset < 0 || !stbtt_InitFont(fi, &ttf[0], offset)) return;
+    if (offset < 0 || !stbtt_InitFont(fi, &ttf[0], offset)) {
+        plat::log("[font] could not parse %s", name.c_str());
+        return;
+    }
     if (size < 1) size = 1;
     scale = stbtt_ScaleForMappingEmToPixels(fi, size);
     rasterScale = size > B360_FONT_MAX_RASTER ? B360_FONT_MAX_RASTER / size : 1.0f;
@@ -95,6 +104,7 @@ void Font::addPage() {
 }
 
 const Font::Glyph& Font::glyph(u32 cp) {
+    ensure();
     std::map<u32, Glyph>::iterator it = glyphs.find(cp);
     if (it != glyphs.end()) return it->second;
 
@@ -155,12 +165,14 @@ const Font::Glyph& Font::glyph(u32 cp) {
 }
 
 float Font::getKerning(u32 a, u32 b) {
+    ensure();
     if (!ok) return 0;
     int k = stbtt_GetCodepointKernAdvance((stbtt_fontinfo*)info, (int)a, (int)b);
     return k ? (float)floor(k * scale + 0.5f) : 0.0f;
 }
 
 bool Font::hasGlyph(u32 cp) {
+    ensure();
     if (!ok) return false;
     return stbtt_FindGlyphIndex((stbtt_fontinfo*)info, (int)cp) != 0;
 }
@@ -297,6 +309,7 @@ void Font::wrap(const std::vector<ColoredString>& text, float limit,
 
 int Font::layout(const std::vector<ColoredString>& text, float limit, AlignMode align,
                  std::vector<GlyphQuad>& out, float* widthOut) {
+    ensure();
     std::vector<std::vector<ColoredString> > lines;
     std::vector<float> widths;
     wrap(text, limit, lines, widths);

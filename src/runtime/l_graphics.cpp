@@ -206,7 +206,17 @@ void useTexture(gfx::Texture* t) {
     if (g_batch.size() > 60000) flush();
 }
 
+// Screen-only shrink for TVs that crop the picture (b360_config.lua
+// B360_SAFE_AREA). Canvases are unaffected; the scale applies when drawing
+// to the back buffer, which for Balatro is the final CRT pass.
+float g_safeArea = 1.0f;
+
 void pushVertex(float x, float y, float u, float v, const ColorF& c) {
+    if (g_safeArea < 1.0f && !g_appliedCanvas) {
+        float cx = g_dev->width() * 0.5f, cy = g_dev->height() * 0.5f;
+        x = cx + (x - cx) * g_safeArea;
+        y = cy + (y - cy) * g_safeArea;
+    }
     gfx::Vertex vx;
     vx.x = x;
     vx.y = y;
@@ -376,18 +386,13 @@ AlignMode parseAlign(const char* s) {
 }
 
 Font* loadFont(lua_State* L, const std::string& path, float size) {
-    std::vector<u8> data;
-    if (!fs::read(path, data)) {
+    plat::PathInfo info;
+    if (!fs::info(path, info) || info.type != plat::PATH_FILE) {
         luaL_error(L, "Could not open font file %s", path.c_str());
         return NULL;
     }
-    Font* f = new Font(g_dev, path, data, size, g_defaultMin, g_defaultMag);
-    if (!f->valid()) {
-        f->release();
-        luaL_error(L, "Could not load font %s", path.c_str());
-        return NULL;
-    }
-    return f;
+    // Loaded lazily on first use (see Font).
+    return new Font(g_dev, path, size, g_defaultMin, g_defaultMag);
 }
 
 void drawGlyphs(const std::vector<GlyphQuad>& quads, const Matrix& m) {
@@ -1668,6 +1673,16 @@ int w_getStats(lua_State* L) {
     return 1;
 }
 
+// Extension: love.graphics._b360_setSafeArea(scale), scale in [0.5, 1].
+int w_setSafeArea(lua_State* L) {
+    float s = (float)luaL_checknumber(L, 1);
+    if (s < 0.5f) s = 0.5f;
+    if (s > 1.0f) s = 1.0f;
+    flush();
+    g_safeArea = s;
+    return 0;
+}
+
 int w_getRendererInfo(lua_State* L) {
     lua_pushstring(L, "Balatro360");
     lua_pushstring(L, "1.0");
@@ -1728,7 +1743,7 @@ const luaL_Reg kFuncs[] = {
     {"getStats", w_getStats}, {"getRendererInfo", w_getRendererInfo}, {"getSupported", w_trueTable},
     {"getSystemLimits", w_getSystemLimits}, {"getCanvasFormats", w_trueTable},
     {"getImageFormats", w_trueTable}, {"getTextureTypes", w_trueTable}, {"captureScreenshot", w_none},
-    {"setStencilTest", w_none}, {"stencil", w_none}, {"flushBatch", w_none}, {"discard", w_none},
+    {"_b360_setSafeArea", w_setSafeArea}, {"setStencilTest", w_none}, {"stencil", w_none}, {"flushBatch", w_none}, {"discard", w_none},
     {NULL, NULL}};
 
 }  // namespace
