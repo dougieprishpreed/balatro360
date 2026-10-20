@@ -13,6 +13,10 @@ make GFX=null      # out/host-null/b360 (no rendering)
 make ppc           # out/ppc/b360: big-endian PowerPC, run with qemu-ppc
 make LUA=luajit    # out/host-luajit/b360: system LuaJIT (libluajit-5.1-dev),
                    # JIT disabled like on the 360 (B360_JIT=1 to enable)
+make ppc-luajit LJ=/path/to/LuaJIT   # big-endian PowerPC + LuaJIT interpreter,
+                   # the closest match to "Release LuaJIT" (see Makefile for
+                   # how to cross-build LuaJIT; use -ffp-contract=off in
+                   # XCFLAGS, like /fp:strict on the 360)
 ```
 
 `tools/test_rng.sh [binary] [runner]` checks that `math.random` & co. match

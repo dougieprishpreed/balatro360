@@ -58,46 +58,48 @@ Command Prompt* works for this: the project's Xbox 360 platform settings
 find the XDK compiler through the `XEDK` environment variable either way.
 (The LuaJIT step below is different and needs the Visual Studio prompt.)
 
-### Faster Lua: the LuaJIT configurations (recommended once the plain build works)
+### LuaJIT (the configuration to play with)
 
-By default the runtime uses the reference Lua 5.1 interpreter, which is
-portable but slow. LuaJIT ships an official Xbox 360 build script (its
-interpreter, written in PowerPC assembly; no JIT on the console). On the
-Linux test build, LuaJIT's interpreter runs Balatro about **2x faster** than
-Lua 5.1, which matters a lot on the 360's CPU.
+`Release` uses the reference Lua 5.1 interpreter: portable, but slow. The
+**Release LuaJIT** configuration uses LuaJIT's own Xbox 360 port (its
+interpreter, written in PowerPC assembly; there is no JIT on the console),
+which runs Balatro about **2x faster**. LuaJIT is also what the PC version
+runs on, so game behaviour matches PC exactly. One-time setup:
 
-1. Clone LuaJIT 2.1 into `third_party\luajit` (this folder is git-ignored):
+1. Download <https://github.com/LuaJIT/LuaJIT/archive/refs/heads/v2.1.zip>,
+   extract it, and rename the extracted `LuaJIT-2.1` folder so that it is
+   `third_party\luajit` inside the project (so `third_party\luajit\src\lj_vm.h`
+   exists). Updating the Balatro360 zip never touches this folder.
 
-   ```
-   git clone -b v2.1 https://github.com/LuaJIT/LuaJIT.git third_party\luajit
-   ```
-
-   Or without git: download
-   <https://github.com/LuaJIT/LuaJIT/archive/refs/heads/v2.1.zip>, extract it,
-   and rename the extracted `LuaJIT-2.1` folder to `third_party\luajit`, so
-   that `third_party\luajit\src\xedkbuild.bat` exists. Updating the
-   Balatro360 zip never touches this folder, so you only do this once.
-
-2. Open **Visual Studio Command Prompt (2010)** (the 32-bit one; the XDK must
-   be installed so `XEDK` is set) and run LuaJIT's Xbox 360 build script.
-   Use this prompt rather than the Xbox 360 Command Prompt: the script first
-   builds small helper tools for your PC with the plain `cl` on `PATH`, and
-   only then calls the XDK's cross compiler itself through `%XEDK%`. If `cl`
-   on `PATH` is the XDK's PowerPC compiler, those helper tools can't run.
+2. Open **Visual Studio Command Prompt (2010)** (the 32-bit one, with the XDK
+   installed so `XEDK` is set), go to the project folder and run:
 
    ```
-   cd third_party\luajit\src
-   xedkbuild
+   tools\xbox360\build_luajit.bat
    ```
 
    It should end with `=== Successfully built LuaJIT for Xbox 360 ===` and
-   leave `luajit20.lib` in `third_party\luajit\src`.
+   leave `luajit20.lib` in `third_party\luajit\src`. Attach the output here if
+   it doesn't.
 
-3. In Visual Studio pick the **Release LuaJIT** configuration and build. The
-   XEX lands in `build\xbox360\out\Release LuaJIT\default.xex`.
+   This is LuaJIT's own `xedkbuild.bat` with one flag added (`/fp:strict`,
+   so the compiler can't fuse multiply-adds; otherwise some seeds give
+   different random numbers than on PC). Use the Visual Studio prompt, not
+   the Xbox 360 Command Prompt: the script first builds small helper tools
+   for your PC with the plain `cl` on `PATH`, and only then calls the XDK's
+   cross compiler through `%XEDK%`.
 
-(`Debug LuaJIT` needs a debug LuaJIT: run `xedkbuild debug` instead, or just
-use `Release LuaJIT`.)
+3. Build the **Release LuaJIT** configuration:
+
+   ```
+   msbuild build\xbox360\Balatro360.sln /t:Rebuild /p:Configuration="Release LuaJIT" /p:Platform="Xbox 360" /m > build_log.txt
+   ```
+
+   The XEX lands in `build\xbox360\out\Release LuaJIT\default.xex`. Pass that
+   path to `prepare_game.py --xex` below.
+
+You only redo step 2 if LuaJIT itself is updated. (`Debug LuaJIT` needs a
+debug LuaJIT: `tools\xbox360\build_luajit.bat debug`.)
 
 ## 3. Build the console folder
 
@@ -133,6 +135,17 @@ log to `b360.log`. Startup takes a few seconds longer than later loads because
 all shaders are compiled on the console.
 
 Hold **BACK + START** for one second to quit to the dashboard.
+
+### Testing in Xenia
+
+Xenia runs `default.xex` directly; keep the `game\` folder next to it.
+
+* The runtime's log goes to Xenia's own log (`xenia.log`) as well as to
+  `b360.log`.
+* Xenia normally doesn't let a game write next to its XEX, so saves and
+  `b360.log` may be missing. In Xenia Canary, setting
+  `allow_game_relative_writes = true` in `xenia-canary.config.toml` should
+  allow it.
 
 ## 5. Reporting results back
 

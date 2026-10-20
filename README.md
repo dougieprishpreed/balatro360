@@ -52,8 +52,10 @@ big-endian PowerPC.
 
 ## Quick start
 
-1. **Build the XEX** with Visual Studio 2010 and the Xbox 360 XDK:
-   open `build/xbox360/Balatro360.sln`, pick `Release | Xbox 360`, build.
+1. **Build the XEX** with Visual Studio 2010 and the Xbox 360 XDK: put
+   LuaJIT 2.1 in `third_party\luajit`, run `tools\xbox360\build_luajit.bat`,
+   then build `build/xbox360/Balatro360.sln` as `Release LuaJIT | Xbox 360`.
+   (`Release` builds without LuaJIT, using the slower Lua 5.1.)
    Full instructions: [docs/BUILDING_XDK.md](docs/BUILDING_XDK.md).
 2. **Prepare the game folder** from your own copy of the game (Python 3):
 

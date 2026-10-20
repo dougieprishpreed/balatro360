@@ -103,6 +103,9 @@ def config_block(cfg, debug, luajit):
       <SetChecksum>true</SetChecksum>
     </Link>
     <Deploy>
+      <!-- No automatic copy to a dev kit (most people test with Xenia or a
+           USB launcher). Set to false if you have a dev kit attached. -->
+      <ExcludedFromBuild>true</ExcludedFromBuild>
       <DeploymentType>CopyToHardDrive</DeploymentType>
     </Deploy>
   </ItemDefinitionGroup>
