@@ -187,9 +187,7 @@ gfx::Texture* g_batchTex = NULL;
 int g_drawCalls = 0;
 int g_drawCallsLast = 0;
 
-// Applied device state.
-gfx::Shader* g_appliedShader = NULL;
-gfx::BlendMode g_appliedBlend = gfx::BLEND_ALPHA;
+// Render target currently bound on the device.
 Canvas* g_appliedCanvas = NULL;
 
 void flush() {

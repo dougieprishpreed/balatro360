@@ -1,0 +1,11 @@
+# Boots Balatro to the main menu and starts a run with the default deck.
+# Frames assume B360_FIXED_DT=0.016666 and a fresh save folder.
+300 screenshot splash.png
+1250 screenshot main_menu.png
+1250 tap a            # PLAY
+1350 tap a            # select deck
+1450 tap a
+1560 tap a
+1700 tap a            # tutorial
+1820 screenshot run_start.png
+1830 quit

@@ -47,6 +47,47 @@ hooks["game"] = function()
 	end
 end
 
+-- Performance: Balatro's classes (engine/object.lua, the SNKRX/classic
+-- pattern) resolve methods through a chain of __index tables, e.g.
+-- Card -> Moveable -> Node -> Object. Plain Lua 5.1 pays for every hop on
+-- every method call (LuaJIT mostly optimises it away). Once all game code is
+-- loaded, copy inherited methods into each subclass so lookups resolve in
+-- one hop. Metatables are untouched, so Object:is() and explicit
+-- Parent.method(self) calls keep working, and subclass overrides win.
+local function flatten_classes()
+	if type(Object) ~= "table" then return 0 end
+	local classes = {}
+	local function is_class(t)
+		return type(t) == "table" and rawget(t, "__index") == t and rawget(t, "super") ~= nil
+	end
+	for _, v in pairs(_G) do
+		if is_class(v) then classes[#classes + 1] = v end
+	end
+	local copied = 0
+	for _, cls in ipairs(classes) do
+		local parent = rawget(cls, "super")
+		local depth = 0
+		while type(parent) == "table" and depth < 32 do
+			for k, v in pairs(parent) do
+				if type(v) == "function" and type(k) == "string" and k:sub(1, 2) ~= "__"
+					and rawget(cls, k) == nil then
+					rawset(cls, k, v)
+					copied = copied + 1
+				end
+			end
+			parent = rawget(parent, "super")
+			depth = depth + 1
+		end
+	end
+	return copied, #classes
+end
+
+-- Called by boot.lua after main.lua (and every module it requires) loaded.
+function love._b360_postmain()
+	local copied, n = flatten_classes()
+	print(string.format("[b360] flattened %d methods into %d classes", copied or 0, n or 0))
+end
+
 -- Wrap require so hooks run once their module has loaded.
 local orig_require = require
 function require(name)

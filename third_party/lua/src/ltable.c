@@ -491,15 +491,43 @@ const TValue *luaH_get (Table *t, const TValue *key) {
 }
 
 
+/*
+** Balatro360: reuse a dead key's node in the new key's own collision chain.
+** Stock 5.1 never reuses dead nodes (until the next rehash), so code that
+** keeps setting a field to nil and back (Balatro does this a lot) grows
+** that chain by one node per GC cycle and lookups get slower and slower.
+** Every node in a chain shares the chain's main position, so storing the
+** new key in any dead node of mainposition(key)'s chain keeps the table
+** invariants. LuaJIT behaves like this too.
+*/
+static TValue *reusedeadkey (lua_State *L, Table *t, const TValue *key) {
+  Node *n;
+  if (t->node == dummynode) return NULL;
+  n = mainposition(t, key);
+  do {
+    if (ttype(gkey(n)) == LUA_TDEADKEY && ttisnil(gval(n))) {
+      setobj2t(L, key2tval(n), key);
+      luaC_barriert(L, t, key);
+      return gval(n);
+    }
+    n = gnext(n);
+  } while (n);
+  return NULL;
+}
+
+
 TValue *luaH_set (lua_State *L, Table *t, const TValue *key) {
   const TValue *p = luaH_get(t, key);
   t->flags = 0;
   if (p != luaO_nilobject)
     return cast(TValue *, p);
   else {
+    TValue *r;
     if (ttisnil(key)) luaG_runerror(L, "table index is nil");
     else if (ttisnumber(key) && luai_numisnan(nvalue(key)))
       luaG_runerror(L, "table index is NaN");
+    r = reusedeadkey(L, t, key);
+    if (r) return r;
     return newkey(L, t, key);
   }
 }
@@ -523,7 +551,10 @@ TValue *luaH_setstr (lua_State *L, Table *t, TString *key) {
     return cast(TValue *, p);
   else {
     TValue k;
+    TValue *r;
     setsvalue(L, &k, key);
+    r = reusedeadkey(L, t, &k);
+    if (r) return r;
     return newkey(L, t, &k);
   }
 }

@@ -8,7 +8,10 @@
 //   B360_GAME_DIR   extracted game directory (default ./game)
 //   B360_SAVE_DIR   save directory (default ./save)
 //   B360_SCRIPT     input script (see docs/HOST_TESTING.md)
-//   B360_FIXED_DT   if set, use a fixed timestep (seconds) for determinism
+//   B360_FIXED_DT   if set, love.timer.step() returns this fixed dt (seconds) and
+//                   love.timer.sleep() doesn't sleep, so runs are deterministic
+//                   and independent of host speed. getTime() stays real time
+//                   (Balatro budgets its GC work with it).
 //   B360_WAV        if set, write mixed audio to this WAV file
 //   B360_MAX_FRAMES quit after this many frames
 #include "../platform.h"
@@ -48,7 +51,6 @@ std::map<long, std::vector<std::string> > g_pendingReleases;
 std::vector<KeyEvent> g_keys;
 std::string g_shotPath;
 double g_fixedDt = 0.0;
-double g_virtualTime = 0.0;
 double g_startTime = 0.0;
 float g_mouseX = 0.0f, g_mouseY = 0.0f;
 
@@ -167,7 +169,6 @@ const char* osName() { return "Linux"; }
 bool pump() {
     // Called at most once per frame from present().
     ++g_frame;
-    if (g_fixedDt > 0.0) g_virtualTime += g_fixedDt;
     runScript();
     if (g_maxFrames >= 0 && g_frame >= g_maxFrames) g_quit = true;
     return !g_quit;
@@ -188,10 +189,7 @@ void fatal(const char* msg) {
     exit(1);
 }
 
-double getTime() {
-    if (g_fixedDt > 0.0) return g_virtualTime;
-    return realTime() - g_startTime;
-}
+double getTime() { return realTime() - g_startTime; }
 
 void sleep(double seconds) {
     if (g_fixedDt > 0.0) return;

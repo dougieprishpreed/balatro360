@@ -275,6 +275,7 @@ private:
     std::vector<std::string>* warnings;
     std::vector<std::string> matNames;
     std::vector<bool> staticBefore;   // insert "static " before token i
+    std::vector<bool> inUniformDecl;  // token i is part of a uniform declaration
 
     void warn(const std::string& s) {
         if (warnings) warnings->push_back(s);
@@ -299,6 +300,18 @@ private:
     // become uniforms); global "const" too.
     void markGlobals() {
         staticBefore.assign(toks.size(), false);
+        inUniformDecl.assign(toks.size(), false);
+        {
+            int d = 0;
+            for (size_t i = 0; i < toks.size(); ++i) {
+                const Token& t = toks[i];
+                if (t.kind == TK_PUNCT && t.text == "{") ++d;
+                else if (t.kind == TK_PUNCT && t.text == "}") --d;
+                if (d != 0 || t.preproc || t.kind != TK_IDENT) continue;
+                if (t.text != "extern" && t.text != "uniform") continue;
+                for (size_t j = i; j < toks.size() && toks[j].text != ";"; ++j) inUniformDecl[j] = true;
+            }
+        }
         int depth = 0;
         bool stmtStart = true;
         for (size_t i = 0; i < toks.size(); ++i) {
@@ -337,8 +350,17 @@ private:
         }
     }
 
-    std::string renameIdent(const std::string& s) const {
+    std::string renameIdent(const std::string& s, size_t tokIndex = (size_t)-1) const {
         const TypeDesc* td = findType(s);
+        if (td && tokIndex < inUniformDecl.size() && inUniformDecl[tokIndex] &&
+            (td->utype == UNIFORM_BOOL || td->utype == UNIFORM_INT)) {
+            // bool/int uniforms become floats: SM3 bool/int constants are
+            // awkward (and shared between stages on the 360); a float works
+            // in every expression these uniforms appear in (conditions,
+            // ternaries, arithmetic).
+            static const char* floats[] = {"", "float", "float2", "float3", "float4"};
+            return floats[td->components];
+        }
         if (td) return td->hlsl;
         if (s == "extern") return "uniform";
         if (s == "position") return "love_position";
@@ -463,7 +485,7 @@ private:
             if (t.text == "gl_FragColor" || t.text == "love_PixelColor") {
                 warn("shader writes " + t.text + " directly; unsupported");
             }
-            out += renameIdent(t.text);
+            out += renameIdent(t.text, i);
         }
     }
 };
@@ -472,13 +494,9 @@ const char* kHlslPrelude =
     "#define lowp\n"
     "#define mediump\n"
     "#define highp\n"
-    "float  glsl_mod(float  x, float  y) { return x - y * floor(x / y); }\n"
-    "float2 glsl_mod(float2 x, float2 y) { return x - y * floor(x / y); }\n"
-    "float3 glsl_mod(float3 x, float3 y) { return x - y * floor(x / y); }\n"
-    "float4 glsl_mod(float4 x, float4 y) { return x - y * floor(x / y); }\n"
-    "float2 glsl_mod(float2 x, float  y) { return x - y * floor(x / y); }\n"
-    "float3 glsl_mod(float3 x, float  y) { return x - y * floor(x / y); }\n"
-    "float4 glsl_mod(float4 x, float  y) { return x - y * floor(x / y); }\n"
+    // GLSL mod() semantics (fmod differs for negative values). A macro
+    // works for every scalar/vector combination without overloads.
+    "#define glsl_mod(x, y) ((x) - (y) * floor((x) / (y)))\n"
     "uniform float4 love_ScreenSize;\n";
 
 }  // namespace

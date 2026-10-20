@@ -1,0 +1,282 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="">
+      <UniqueIdentifier>{1b4db7eb-4057-5ddf-91e0-36dec72071f5}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\third_party\lua\src\lapi.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\lauxlib.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\lbaselib.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\lcode.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\ldblib.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\ldebug.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\ldo.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\ldump.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\lfunc.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\lgc.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\llex.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\lmathlib.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\lmem.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\loadlib.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\lobject.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\lopcodes.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\lparser.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\lstate.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\lstring.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\lstrlib.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\ltable.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\ltablib.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\ltm.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\lundump.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\lvm.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\lua\src\lzio.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\luabitop\bit.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\miniz\miniz.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\miniz\miniz_tdef.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\third_party\miniz\miniz_tinfl.c">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\runtime\filesystem.cpp">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\runtime\font.cpp">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\runtime\l_audio.cpp">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\runtime\l_compat.cpp">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\runtime\l_event.cpp">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\runtime\l_filesystem.cpp">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\runtime\l_graphics.cpp">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\runtime\l_joystick.cpp">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\runtime\l_misc.cpp">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\runtime\l_thread.cpp">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\runtime\luax.cpp">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\runtime\runtime.cpp">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\runtime\variant.cpp">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\gfx\shader_translate.cpp">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\gfx\d3d9\device_d3d9.cpp">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\third_party_impl.cpp">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\platform\xbox360\platform_x360.cpp">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\platform\xbox360\main_x360.cpp">
+      <Filter></Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\src\common\types.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\gfx\device.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\gfx\shader_translate.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\platform\platform.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\runtime\embedded_lua.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\runtime\event.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\runtime\filesystem.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\runtime\font.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\runtime\luax.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\runtime\modules.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\runtime\object.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\runtime\runtime.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\runtime\variant.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\lua\src\lapi.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\lua\src\lauxlib.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\lua\src\lcode.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\lua\src\ldebug.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\lua\src\ldo.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\lua\src\lfunc.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\lua\src\lgc.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\lua\src\llex.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\lua\src\llimits.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\lua\src\lmem.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\lua\src\lobject.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\lua\src\lopcodes.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\lua\src\lparser.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\lua\src\lstate.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\lua\src\lstring.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\lua\src\ltable.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\lua\src\ltm.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\lua\src\lua.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\lua\src\luaconf.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\lua\src\lualib.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\lua\src\lundump.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\lua\src\lvm.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\lua\src\lzio.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\miniz\miniz.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\miniz\miniz_common.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\miniz\miniz_export.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\miniz\miniz_tdef.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\miniz\miniz_tinfl.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\third_party\miniz\miniz_zip.h">
+      <Filter></Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

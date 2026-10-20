@@ -154,6 +154,8 @@ int w_step(lua_State* L) {
     }
     g_timer.dt = now - g_timer.prev;
     g_timer.prev = now;
+    double fixed = plat::fixedTimestep();
+    if (fixed > 0) g_timer.dt = fixed;
     ++g_timer.frames;
     double since = now - g_timer.fpsTime;
     if (since >= 1.0) {

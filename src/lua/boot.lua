@@ -181,6 +181,7 @@ local function boot()
 	run_conf()
 	if love._b360_hooks then love._b360_hooks() end
 	require("main")
+	if love._b360_postmain then love._b360_postmain() end
 end
 
 local inerror = false

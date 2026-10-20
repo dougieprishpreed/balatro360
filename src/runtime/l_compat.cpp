@@ -98,7 +98,15 @@ int math_randomseed(lua_State* L) {
 }
 
 // LuaJIT: log2(x) * (1 / log2(base)) -- "Do NOT join the expression to x / y."
-double portableLog2(double x) { return log(x) * 1.44269504088896340736; }
+// The VS2010 CRT has no log2(); split off the binary exponent so powers of
+// two stay exact and the rest is accurate to about an ulp.
+double portableLog2(double x) {
+    if (!(x > 0) || x != x || x > 1.7976931348623157e308) return log(x) * 1.44269504088896340736;
+    int e = 0;
+    double m = frexp(x, &e);   // x = m * 2^e, m in [0.5, 1)
+    if (m == 0.5) return (double)(e - 1);
+    return (double)e + log(m) * 1.44269504088896340736;
+}
 
 int math_log(lua_State* L) {
     double x = luaL_checknumber(L, 1);
@@ -106,7 +114,12 @@ int math_log(lua_State* L) {
         double y = luaL_checknumber(L, 2);
         volatile double lx = portableLog2(x);
         volatile double ly = 1.0 / portableLog2(y);
-        lua_pushnumber(L, lx * ly);
+        double r = lx * ly;
+        // LuaJIT's log2 is correctly rounded, so exact powers (log(1e7, 10))
+        // give exact integers; Balatro floors these results.
+        double n = floor(r + 0.5);
+        if (fabs(r - n) < 1e-9 && pow(y, n) == x) r = n;
+        lua_pushnumber(L, r);
     } else {
         lua_pushnumber(L, log(x));
     }

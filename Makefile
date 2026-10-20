@@ -17,10 +17,9 @@ CC := $(CROSS)gcc
 
 INCLUDES := -Ithird_party/lua/src -Ithird_party/stb -Ithird_party/miniz -Ithird_party/luabitop -Isrc
 WARN := -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers
-CXXFLAGS ?= -O2 -g
-CXXFLAGS += -std=c++98 -fsigned-char $(WARN) $(INCLUDES)
-CFLAGS ?= -O2 -g
-CFLAGS += -std=c99 -fsigned-char $(INCLUDES)
+OPT ?= -O2 -g
+CXXFLAGS := $(OPT) -std=c++98 -fsigned-char $(WARN) $(INCLUDES)
+CFLAGS := $(OPT) -std=c99 -fsigned-char $(INCLUDES)
 
 LUA_SRC := $(filter-out %/lua.c %/luac.c %/print.c %/linit.c %/loslib.c %/liolib.c,$(wildcard third_party/lua/src/*.c))
 MINIZ_SRC := third_party/miniz/miniz.c third_party/miniz/miniz_tdef.c third_party/miniz/miniz_tinfl.c
@@ -41,10 +40,13 @@ OBJS := $(patsubst %.c,$(OUT)/%.o,$(LUA_SRC)) \
 	$(patsubst %.c,$(OUT)/%.o,$(MINIZ_SRC)) \
 	$(patsubst %.cpp,$(OUT)/%.o,$(RUNTIME_SRC))
 
-all: $(OUT)/b360
+all: $(OUT)/b360 $(OUT)/b360-shadertool
 
 $(OUT)/b360: $(OBJS)
 	$(CXX) -o $@ $^ $(LIBS) $(LDFLAGS)
+
+$(OUT)/b360-shadertool: $(OUT)/src/tools/shadertool.o $(OUT)/src/gfx/shader_translate.o
+	$(CXX) -o $@ $^ $(LDFLAGS)
 
 src/runtime/embedded_lua.h: $(wildcard src/lua/*.lua) tools/embed_lua.py
 	python3 tools/embed_lua.py
