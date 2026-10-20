@@ -7,6 +7,11 @@ build/xbox360/*/
 *.opensdf
 ipch/
 
+# logs written while building and testing
+*_log.txt
+b360.log
+xenia.log
+
 # never commit game data
 /game/
 /save/

@@ -73,12 +73,12 @@ def filter_for(path):
 def config_block(cfg, debug, luajit):
     defs = ("_DEBUG;" if debug else "NDEBUG;") + "_XBOX;"
     defs += "B360_LUAJIT;" if luajit else "LUA_ANSI;"
-    defs += "%(PreprocessorDefinitions)"
+    defs += "B360_HAS_SOURCE_STAMP;%(PreprocessorDefinitions)"
     opt = "Disabled" if debug else "Full"
     libs = LIBS_DEBUG if debug else LIBS_RELEASE
     if luajit:
         libs = LUAJIT_DIR + "\\luajit20.lib;" + libs
-    inc = ";".join(COMMON_INCLUDES + ([LUAJIT_DIR] if luajit else PUC_INCLUDES))
+    inc = ";".join(["$(ProjectDir)stamp"] + COMMON_INCLUDES + ([LUAJIT_DIR] if luajit else PUC_INCLUDES))
     cond = "'$(Configuration)|$(Platform)'=='%s|Xbox 360'" % cfg
     return """  <ItemDefinitionGroup Condition="{cond}">
     <ClCompile>
@@ -103,6 +103,10 @@ def config_block(cfg, debug, luajit):
       <OptimizeReferences>{optref}</OptimizeReferences>
       <SetChecksum>true</SetChecksum>
     </Link>
+    <PreBuildEvent>
+      <!-- Records the git commit for the first line of b360.log. -->
+      <Command>call "$(ProjectDir)..\\..\\tools\\xbox360\\source_stamp.bat" "$(ProjectDir)stamp\\source_stamp.h"</Command>
+    </PreBuildEvent>
     <Deploy>
       <!-- No automatic copy to a dev kit (most people test with Xenia or a
            USB launcher). Set to false if you have a dev kit attached. -->

@@ -20,21 +20,23 @@ is done with the Linux host build.
 
 ## 1. Get the source
 
-To get the code (and to update it later):
+Clone the repository with git (Git for Windows):
 
-1. On GitHub, open the repository's `main` branch and choose
-   **Code → Download ZIP**.
-2. The zip contains one folder named `balatro360-main`. Copy *its contents*
-   over your project folder (`F:\downloads\temp\python\hermes\balatro360`),
-   overwriting files.
-3. Do a full **Rebuild** (not just Build) after each update, so nothing is
-   skipped because of file timestamps from the zip.
+```
+git clone https://github.com/dougieprishpreed/balatro360.git
+```
 
-Overwriting never deletes files that were removed from the repository. That
-is harmless: the Visual Studio project lists exactly which files to compile.
+To update later, run `git pull` in the clone and build again; a normal
+**Build** is enough (git only touches files that changed). Your own files
+stay put: `out\` (the prepared console folder), `third_party\luajit\`,
+build output and logs are all ignored by git.
 
-Each zip carries a source stamp; the runtime writes it as the first line of
-`b360.log` (`source <commit> <date>`), so logs show which version was built.
+The project records the commit it was built from (and a `+` if you had
+local changes) on the first line of `b360.log`
+(`source <commit> <date>`), so logs show exactly which version ran.
+
+A **Code → Download ZIP** of `main` also works; copy the zip's
+`balatro360-main` folder over your project folder and **Rebuild**.
 
 ## 2. Build the XEX
 
@@ -42,14 +44,15 @@ Each zip carries a source stamp; the runtime writes it as the first line of
 2. In the toolbar pick the configuration **Release** and platform **Xbox 360**.
    (Debug also works; it is much slower but easier to debug on a dev kit.
    The **LuaJIT** configurations are described below.)
-3. **Build → Rebuild Solution**.
+3. **Build → Build Solution** (**Rebuild Solution** after switching
+   configurations or if something looks stale).
 
 The result is `build\xbox360\out\Release\default.xex`.
 
 From a command prompt you can do the same with:
 
 ```
-msbuild build\xbox360\Balatro360.sln /t:Rebuild /p:Configuration=Release /p:Platform="Xbox 360" /m > build_log.txt
+msbuild build\xbox360\Balatro360.sln /t:Build /p:Configuration=Release /p:Platform="Xbox 360" /m > build_log.txt
 ```
 
 Either the *Visual Studio Command Prompt (2010)* or the XDK's *Xbox 360
@@ -72,8 +75,8 @@ runs on, so game behaviour matches PC exactly. One-time setup:
    exists). If you previously put LuaJIT 2.1 there, delete that folder first.
    It must be 2.0: LuaJIT 2.1 removed the PowerPC code its Xbox 360 build
    needs, so 2.1's `xedkbuild.bat` fails. 2.0 is the maintained stable branch
-   and runs Balatro the same way. Updating the Balatro360 zip never touches
-   this folder.
+   and runs Balatro the same way. git ignores this folder, so updates never
+   touch it.
 
 2. Open **Visual Studio Command Prompt (2010)** (the 32-bit one, with the XDK
    installed so `XEDK` is set), go to the project folder and run:
@@ -96,7 +99,7 @@ runs on, so game behaviour matches PC exactly. One-time setup:
 3. Build the **Release LuaJIT** configuration:
 
    ```
-   msbuild build\xbox360\Balatro360.sln /t:Rebuild /p:Configuration="Release LuaJIT" /p:Platform="Xbox 360" /m > build_log.txt
+   msbuild build\xbox360\Balatro360.sln /t:Build /p:Configuration="Release LuaJIT" /p:Platform="Xbox 360" /m > build_log.txt
    ```
 
    The XEX lands in `build\xbox360\out\Release LuaJIT\default.xex`. Pass that

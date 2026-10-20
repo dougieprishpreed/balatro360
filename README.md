@@ -51,18 +51,19 @@ configuration.
 
 ## Quick start
 
-1. **Build the XEX** with Visual Studio 2010 and the Xbox 360 XDK: put
+1. **Clone** this repository (`git clone https://github.com/dougieprishpreed/balatro360.git`).
+2. **Build the XEX** with Visual Studio 2010 and the Xbox 360 XDK: put
    LuaJIT 2.0 in `third_party\luajit`, run `tools\xbox360\build_luajit.bat`,
    then build `build/xbox360/Balatro360.sln` as `Release LuaJIT | Xbox 360`.
    (`Release` builds without LuaJIT, using the slower Lua 5.1.)
    Full instructions: [docs/BUILDING_XDK.md](docs/BUILDING_XDK.md).
-2. **Prepare the game folder** from your own copy of the game (Python 3):
+3. **Prepare the game folder** from your own copy of the game (Python 3):
 
    ```
    python tools/prepare_game.py "path\to\Balatro.exe" out\Balatro360 --xex "build\xbox360\out\Release LuaJIT\default.xex"
    ```
 
-3. **Copy** `out\Balatro360` to wherever you launch unsigned XEX files from
+4. **Copy** `out\Balatro360` to wherever you launch unsigned XEX files from
    (e.g. a USB drive) and launch `default.xex`. Keep the folder together and
    writable: saves and the log are written next to the XEX.
 

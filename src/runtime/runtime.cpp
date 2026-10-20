@@ -107,8 +107,13 @@ int run(int argc, char** argv) {
         plat::fatal("Platform initialisation failed");
         return 1;
     }
-    const char* commit = B360_SOURCE_COMMIT[0] == '$' ? "git checkout" : B360_SOURCE_COMMIT;
+#if defined(B360_GIT_COMMIT)
+    const char* commit = B360_GIT_COMMIT;   // "+" suffix: built with local changes
+    const char* date = B360_GIT_DATE;
+#else
+    const char* commit = B360_SOURCE_COMMIT[0] == '$' ? "unknown" : B360_SOURCE_COMMIT;
     const char* date = B360_SOURCE_DATE[0] == '$' ? "" : B360_SOURCE_DATE;
+#endif
     plat::log("Balatro360 runtime starting (%s), source %s %s, built %s %s", plat::osName(), commit, date,
               __DATE__, __TIME__);
     if (!initGraphics(cfg.width, cfg.height)) {

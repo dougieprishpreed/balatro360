@@ -31,7 +31,11 @@ endif
 INCLUDES := $(LUA_INC) -Ithird_party/stb -Ithird_party/miniz -Isrc
 WARN := -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers
 OPT ?= -O2 -g
-CXXFLAGS := $(OPT) -std=c++98 -fsigned-char $(WARN) $(INCLUDES)
+# Source stamp for the first log line (see src/common/build_id.h).
+GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null)$(shell git status --porcelain --untracked-files=no 2>/dev/null | head -c1 | sed 's/./+/')
+GIT_DATE := $(shell git log -1 --format=%cI 2>/dev/null)
+STAMP := $(if $(GIT_COMMIT),-DB360_GIT_COMMIT='"$(GIT_COMMIT)"' -DB360_GIT_DATE='"$(GIT_DATE)"',)
+CXXFLAGS := $(OPT) -std=c++98 -fsigned-char $(WARN) $(INCLUDES) $(STAMP)
 CFLAGS := $(OPT) -std=c99 -fsigned-char $(INCLUDES)
 
 LUA_SRC := $(filter-out %/lua.c %/luac.c %/print.c %/linit.c %/loslib.c %/liolib.c,$(wildcard third_party/lua/src/*.c))
