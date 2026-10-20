@@ -2,6 +2,10 @@
 
 namespace rt {
 
+struct Variant::TableData : public Object {
+    std::vector<std::pair<Variant, Variant> > items;
+};
+
 Variant::Variant() : t(NIL), b(false), n(0), table(NULL), obj(NULL), objType(NULL) {}
 
 Variant::Variant(const Variant& o) : t(NIL), b(false), n(0), table(NULL), obj(NULL), objType(NULL) {
@@ -20,7 +24,7 @@ Variant::~Variant() { clear(); }
 
 void Variant::clear() {
     if (table) {
-        delete table;
+        table->release();
         table = NULL;
     }
     if (obj) {
@@ -37,7 +41,8 @@ void Variant::copyFrom(const Variant& o) {
     n = o.n;
     s = o.s;
     objType = o.objType;
-    if (o.table) table = new std::vector<std::pair<Variant, Variant> >(*o.table);
+    table = o.table;
+    if (table) table->retain();
     obj = o.obj;
     if (obj) obj->retain();
 }
@@ -95,15 +100,24 @@ bool Variant::fromLua(lua_State* L, int idx, Variant& out, int depth) {
         return true;
     }
     case LUA_TTABLE: {
-        if (depth > 64) return false;
-        out.t = TABLE;
-        out.table = new std::vector<std::pair<Variant, Variant> >();
+        if (depth > 64 || !lua_checkstack(L, 4)) return false;
+        size_t n = 0;
         lua_pushnil(L);
         while (lua_next(L, idx)) {
-            Variant k, v;
-            bool okK = fromLua(L, -2, k, depth + 1);
-            bool okV = fromLua(L, -1, v, depth + 1);
-            if (okK && okV && k.t != NIL) out.table->push_back(std::make_pair(k, v));
+            ++n;
+            lua_pop(L, 1);
+        }
+        out.t = TABLE;
+        out.table = new TableData;   // refcount 1, owned by out
+        std::vector<std::pair<Variant, Variant> >& items = out.table->items;
+        items.reserve(n);
+        // Fill entries in place: no temporaries, no copies on growth.
+        lua_pushnil(L);
+        while (lua_next(L, idx)) {
+            items.push_back(std::pair<Variant, Variant>());
+            std::pair<Variant, Variant>& e = items.back();
+            if (!fromLua(L, -2, e.first, depth + 1) || e.first.t == NIL || !fromLua(L, -1, e.second, depth + 1))
+                items.pop_back();
             lua_pop(L, 1);
         }
         return true;
@@ -137,11 +151,12 @@ void Variant::toLua(lua_State* L) const {
         lua_pushlstring(L, s.data(), s.size());
         break;
     case TABLE:
-        lua_createtable(L, 0, (int)table->size());
-        for (size_t i = 0; i < table->size(); ++i) {
-            (*table)[i].first.toLua(L);
-            (*table)[i].second.toLua(L);
-            lua_settable(L, -3);
+        lua_checkstack(L, 4);
+        lua_createtable(L, 0, (int)table->items.size());
+        for (size_t i = 0; i < table->items.size(); ++i) {
+            table->items[i].first.toLua(L);
+            table->items[i].second.toLua(L);
+            lua_rawset(L, -3);
         }
         break;
     case OBJECT:

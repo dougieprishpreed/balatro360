@@ -29,14 +29,12 @@ The runtime only uses the Lua 5.1 C API, so it builds against either:
   itself, so behaviour matches PC exactly. LuaJIT unwinds errors with longjmp
   there, so runtime code never holds locks across calls that can raise Lua
   errors.
-* **PUC Lua 5.1.5** (default), described below. LuaJIT 2.1 removed the PowerPC PE
-  object writer that build needs (2020), so the 360 uses the maintained 2.0
-  branch; both share the same random number generator and `math.log`.
-
-* **PUC Lua 5.1.5**, compiled **as C++** so that Lua errors are C++ exceptions
-  and unwind our C++ frames correctly (RAII locks, std::string temporaries).
-  LuaJIT can't be used: it has no Xbox 360 target, and homebrew can't rely on
-  executable memory for a JIT.
+  LuaJIT 2.1 removed the PowerPC PE object writer that build needs (2020),
+  so the 360 uses the maintained 2.0 branch; both share the same random
+  number generator and `math.log`.
+* **PUC Lua 5.1.5** (the plain `Release` configuration), compiled **as C++**
+  so that Lua errors are C++ exceptions and unwind our C++ frames correctly
+  (RAII locks, std::string temporaries).
 * `src/runtime/l_compat.cpp` restores the LuaJIT behaviour Balatro relies on:
   * `math.random`/`math.randomseed` are a bit-exact port of LuaJIT 2.1's
     Tausworthe generator. Balatro reseeds and draws from it for every random
@@ -58,6 +56,33 @@ The runtime only uses the Lua 5.1 C API, so it builds against either:
 * After all game code is loaded, inherited methods are copied into each
   subclass (`hooks.lua`, `flatten_classes`) so method calls don't walk the
   `__index` chain.
+* Every Lua state gets its own small-block allocator (`lua_alloc.cpp`):
+  blocks up to 256 bytes come from per-size free lists without locks or
+  headers, larger ones from the CRT heap. (64-bit host LuaJIT keeps its own.)
+
+## Frame pacing
+
+`love.graphics.present()` goes through `FramePacer` (`src/runtime/pacing.cpp`).
+At 60 fps a new frame is shown every vblank; at 30 fps every second one
+(`D3DRS_PRESENTINTERVAL` on the 360). In `"auto"` mode (the default on the
+console) the pacer drops to 30 when 8 of the last 60 frames missed a vblank
+and returns to 60 once the CPU time per frame has stayed below 13.3 ms for
+3 s; if that attempt fails again within 10 s, the next one waits twice as
+long (up to a minute). Balatro animates with the measured frame time, so
+gameplay speed is the same either way.
+
+## Performance tools
+
+* `B360_LOG_PERF` wraps `love.update`, `love.draw` and `present` and logs
+  their average time per frame with draw call and vertex counts.
+* `B360_PROFILE` (`src/runtime/profiler.cpp`) is a sampling profiler: a
+  helper thread arms a one-shot Lua count hook about every millisecond, and
+  the hook records the running function and its callers on the game thread.
+  Time in C functions is charged to the Lua line that called them.
+
+On the Linux build, nearly all of a gameplay frame is Balatro's own Lua
+(card movement, UI layout and drawing, its garbage collector budget); the
+runtime's C++ side is a few percent.
 
 ## Boot sequence
 
@@ -121,9 +146,13 @@ backend doesn't implement yet and Microsoft's compiler handles.
   first copies the texture back into EDRAM.
 * CPU textures (images, glyph atlases) use `D3DFMT_LIN_A8R8G8B8`, written as
   native-endian `0xAARRGGBB` DWORDs, so no tiling code is needed.
-* Shaders are compiled with `D3DXCompileShader`; uniforms go through the
-  D3DX constant tables. Constants are device-global on D3D9, so a shader's
-  uniforms are re-uploaded whenever it draws.
+* Shaders are compiled with `D3DXCompileShader`. Each uniform's constant
+  registers are looked up once in the D3DX constant tables, and values are
+  then written with `Set*ShaderConstantF`. Constants are device-global, so
+  after another shader drew everything is re-uploaded; otherwise only the
+  uniforms that changed. The core skips `Shader:send` calls that don't
+  change a value (Balatro re-sends about a dozen uniforms before every
+  sprite).
 
 ### Fonts
 
@@ -148,7 +177,9 @@ thread safe (one mixer lock).
 
 `love.thread` creates a fresh Lua state per thread (all modules except
 graphics). Channels deep-copy values (`src/runtime/variant.h`) including nested
-tables, which Balatro uses to send save data to its save thread. On the 360
+tables, which Balatro uses to send save data to its save thread. A copied
+table is immutable and reference counted, so it is built once and never
+copied again on its way through the channel. On the 360
 Lua workers are spread over hardware threads 2 to 5, audio runs on 3, and the
 game on 0.
 

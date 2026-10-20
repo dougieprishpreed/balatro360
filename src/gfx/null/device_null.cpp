@@ -3,6 +3,9 @@
 // still runs the HLSL translator on every shader so translation problems
 // show up in those builds.
 #include "../device.h"
+
+#include <stdlib.h>
+#include <string.h>
 #include "../shader_translate.h"
 #include "../../platform/platform.h"
 
@@ -14,13 +17,16 @@ class NullTexture : public Texture {};
 
 class NullShader : public Shader {
 public:
-    virtual void setUniform(const std::string&, const float*, int) {}
-    virtual void setUniformTexture(const std::string&, Texture*) {}
+    virtual void setUniform(int, const float*, int) {}
+    virtual void setUniformTexture(int, Texture*) {}
 };
 
 class NullDevice : public Device {
 public:
-    NullDevice() : w(0), h(0) {}
+    NullDevice() : w(0), h(0), interval(1), nextVblank(0), lastFlip(0) {
+        const char* v = getenv("B360_NULL_VSYNC");
+        vsync = v && strcmp(v, "1") == 0;
+    }
     virtual bool init(int width, int height) {
         w = width;
         h = height;
@@ -65,11 +71,29 @@ public:
     virtual void setScissor(bool, int, int, int, int) {}
     virtual void setColorMask(bool, bool, bool, bool) {}
     virtual void drawTriangles(const Vertex*, int, Texture*, Shader*, BlendMode) {}
-    virtual void present() {}
+    // B360_NULL_VSYNC=1 emulates a 60 Hz display (present() waits for the
+    // next vblank, or the one after at interval 2), for testing frame pacing.
+    virtual void present() {
+        if (!vsync) return;
+        const double period = 1.0 / 60.0;
+        double now = plat::getTime();
+        if (nextVblank == 0) nextVblank = now;
+        double target = lastFlip + interval * period;
+        while (nextVblank < now || nextVblank < target - 0.0001) nextVblank += period;
+        plat::sleep(nextVblank - now);
+        lastFlip = nextVblank;
+    }
+    virtual bool setPresentInterval(int n) {
+        interval = n;
+        return vsync;
+    }
     virtual const char* rendererName() const { return "null"; }
 
 private:
     int w, h;
+    bool vsync;
+    int interval;
+    double nextVblank, lastFlip;
 };
 
 }  // namespace

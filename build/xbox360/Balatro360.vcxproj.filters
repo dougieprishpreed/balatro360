@@ -126,7 +126,16 @@
     <ClCompile Include="..\..\src\runtime\l_thread.cpp">
       <Filter></Filter>
     </ClCompile>
+    <ClCompile Include="..\..\src\runtime\lua_alloc.cpp">
+      <Filter></Filter>
+    </ClCompile>
     <ClCompile Include="..\..\src\runtime\luax.cpp">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\runtime\pacing.cpp">
+      <Filter></Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\runtime\profiler.cpp">
       <Filter></Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\runtime\runtime.cpp">
@@ -186,6 +195,9 @@
       <Filter></Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\runtime\object.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\runtime\pacing.h">
       <Filter></Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\runtime\runtime.h">

@@ -76,7 +76,7 @@ bool runEmbedded(lua_State* L, const unsigned char* code, unsigned int size, con
 }  // namespace
 
 lua_State* newLuaState(bool mainThread) {
-    lua_State* L = luaL_newstate();
+    lua_State* L = newRawLuaState();
     openStandardLibs(L);
     open_compat(L);
 
@@ -150,6 +150,7 @@ int run(int argc, char** argv) {
         code = lua_isnumber(L, -1) ? (int)lua_tonumber(L, -1) : 0;
     }
     plat::log("Balatro360 exiting with code %d", code);
+    profilerStop();
     shutdownAudio();
     plat::shutdown();
     // Worker threads (sound/save managers) block forever on their channels,

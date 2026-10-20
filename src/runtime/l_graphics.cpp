@@ -6,6 +6,7 @@
 #include "modules.h"
 #include "font.h"
 #include "filesystem.h"
+#include "pacing.h"
 #include "../gfx/device.h"
 #include "../gfx/shader_translate.h"
 
@@ -97,15 +98,37 @@ public:
 class ShaderObject : public Object {
 public:
     gfx::Shader* sh;
+    // Last value sent to each uniform (indexed like sh->uniforms). Balatro
+    // re-sends a dozen uniforms before every sprite it draws, mostly with
+    // unchanged values; those sends then cost nothing.
+    std::vector<std::vector<float> > values;
     ShaderObject() : sh(NULL) {}
     ~ShaderObject() {
         if (sh && g_dev) g_dev->destroyShader(sh);
     }
-    const gfx::UniformInfo* find(const std::string& name) const {
+    int find(const char* name) const {
         for (size_t i = 0; i < sh->uniforms.size(); ++i)
-            if (sh->uniforms[i].name == name) return &sh->uniforms[i];
-        return NULL;
+            if (strcmp(sh->uniforms[i].name.c_str(), name) == 0) return (int)i;
+        return -1;
     }
+};
+
+// Float array that stays on the stack for typical uniform sizes.
+struct FloatBuf {
+    float local[64];
+    std::vector<float> heap;
+    int n;
+    FloatBuf() : n(0) {}
+    void push(float v) {
+        if (n < 64) {
+            local[n] = v;
+        } else {
+            if (n == 64) heap.assign(local, local + 64);
+            heap.push_back(v);
+        }
+        ++n;
+    }
+    const float* data() const { return n <= 64 ? local : &heap[0]; }
 };
 
 class TextObject : public Object {
@@ -181,20 +204,28 @@ gfx::Filter g_defaultMin = gfx::FILTER_LINEAR, g_defaultMag = gfx::FILTER_LINEAR
 gfx::Texture* g_white = NULL;
 Ref<Font> g_defaultFont;
 
-// Batch
+// Batch: the first g_batchCount entries of g_batch are pending vertices
+// (the vector only ever grows, so appending never reallocates per vertex).
 std::vector<gfx::Vertex> g_batch;
+int g_batchCount = 0;
 gfx::Texture* g_batchTex = NULL;
 int g_drawCalls = 0;
 int g_drawCallsLast = 0;
+int g_canvasSwitches = 0;
+int g_canvasSwitchesLast = 0;
+int g_vertices = 0;
+int g_verticesLast = 0;
+FramePacer g_pacer;
 
 // Render target currently bound on the device.
 Canvas* g_appliedCanvas = NULL;
 
 void flush() {
-    if (g_batch.empty()) return;
+    if (g_batchCount == 0) return;
     gfx::Shader* sh = g_state.shader.get() ? g_state.shader->sh : NULL;
-    g_dev->drawTriangles(&g_batch[0], (int)g_batch.size(), g_batchTex ? g_batchTex : g_white, sh, g_state.blend);
-    g_batch.clear();
+    g_dev->drawTriangles(&g_batch[0], g_batchCount, g_batchTex ? g_batchTex : g_white, sh, g_state.blend);
+    g_vertices += g_batchCount;
+    g_batchCount = 0;
     ++g_drawCalls;
 }
 
@@ -203,7 +234,24 @@ void useTexture(gfx::Texture* t) {
         flush();
         g_batchTex = t;
     }
-    if (g_batch.size() > 60000) flush();
+    if (g_batchCount > 60000) flush();
+}
+
+// Room for n more vertices in the batch.
+gfx::Vertex* batchAlloc(int n) {
+    if (g_batchCount + n > (int)g_batch.size()) g_batch.resize((g_batchCount + n) * 2);
+    gfx::Vertex* v = &g_batch[g_batchCount];
+    g_batchCount += n;
+    return v;
+}
+
+// Vertex colour, clamped once per primitive rather than per vertex.
+struct VColor {
+    float r, g, b, a;
+};
+VColor vcolor(const ColorF& c) {
+    VColor v = {clamp01(c.r), clamp01(c.g), clamp01(c.b), clamp01(c.a)};
+    return v;
 }
 
 // Screen-only shrink for TVs that crop the picture (b360_config.lua
@@ -211,22 +259,32 @@ void useTexture(gfx::Texture* t) {
 // to the back buffer, which for Balatro is the final CRT pass.
 float g_safeArea = 1.0f;
 
-void pushVertex(float x, float y, float u, float v, const ColorF& c) {
+inline void putVertex(gfx::Vertex& vx, float x, float y, float u, float v, const VColor& c) {
     if (g_safeArea < 1.0f && !g_appliedCanvas) {
         float cx = g_dev->width() * 0.5f, cy = g_dev->height() * 0.5f;
         x = cx + (x - cx) * g_safeArea;
         y = cy + (y - cy) * g_safeArea;
     }
-    gfx::Vertex vx;
     vx.x = x;
     vx.y = y;
     vx.u = u;
     vx.v = v;
-    vx.r = clamp01(c.r);
-    vx.g = clamp01(c.g);
-    vx.b = clamp01(c.b);
-    vx.a = clamp01(c.a);
-    g_batch.push_back(vx);
+    vx.r = c.r;
+    vx.g = c.g;
+    vx.b = c.b;
+    vx.a = c.a;
+}
+
+// Two triangles a-b-c, b-d-c (positions already transformed).
+void putQuad(float ax, float ay, float bx, float by, float cx, float cy, float dx, float dy, float u0, float v0,
+             float u1, float v1, const VColor& c) {
+    gfx::Vertex* o = batchAlloc(6);
+    putVertex(o[0], ax, ay, u0, v0, c);
+    putVertex(o[1], bx, by, u1, v0, c);
+    putVertex(o[2], cx, cy, u0, v1, c);
+    putVertex(o[3], bx, by, u1, v0, c);
+    putVertex(o[4], dx, dy, u1, v1, c);
+    putVertex(o[5], cx, cy, u0, v1, c);
 }
 
 // Quad from local rectangle with UVs, transformed by m.
@@ -237,12 +295,7 @@ void addQuad(const Matrix& m, float x0, float y0, float x1, float y1, float u0, 
     m.apply(x1, y0, bx, by);
     m.apply(x0, y1, cx, cy);
     m.apply(x1, y1, dx, dy);
-    pushVertex(ax, ay, u0, v0, c);
-    pushVertex(bx, by, u1, v0, c);
-    pushVertex(cx, cy, u0, v1, c);
-    pushVertex(bx, by, u1, v0, c);
-    pushVertex(dx, dy, u1, v1, c);
-    pushVertex(cx, cy, u0, v1, c);
+    putQuad(ax, ay, bx, by, cx, cy, dx, dy, u0, v0, u1, v1, vcolor(c));
 }
 
 ColorF mulColor(const ColorF& a, const ColorF& b) {
@@ -258,6 +311,7 @@ void applyCanvas() {
     if (g_state.canvas.get() == g_appliedCanvas) return;
     flush();
     g_appliedCanvas = g_state.canvas.get();
+    ++g_canvasSwitches;
     g_dev->setRenderTarget(g_appliedCanvas ? g_appliedCanvas->tex : NULL);
     // Scissor rectangles are relative to the target.
     if (g_state.scissor) g_dev->setScissor(true, g_state.sx, g_state.sy, g_state.sw, g_state.sh);
@@ -406,18 +460,23 @@ void drawGlyphs(const std::vector<GlyphQuad>& quads, const Matrix& m) {
 // ------------------------------------------------------------ geometry
 typedef std::vector<float> Points;   // x0,y0,x1,y1,...
 
-void fillPolygon(const Points& p) {
+void fillPolygon(Points& p) {
     size_t n = p.size() / 2;
     if (n < 3) return;
     useTexture(g_white);
+    // Transform every point once, then emit the triangle fan.
+    for (size_t i = 0; i < n; ++i) {
+        float x, y;
+        g_transform.apply(p[i * 2], p[i * 2 + 1], x, y);
+        p[i * 2] = x;
+        p[i * 2 + 1] = y;
+    }
+    VColor c = vcolor(g_state.color);
+    gfx::Vertex* o = batchAlloc((int)(n - 2) * 3);
     for (size_t i = 1; i + 1 < n; ++i) {
-        float ax, ay, bx, by, cx, cy;
-        g_transform.apply(p[0], p[1], ax, ay);
-        g_transform.apply(p[i * 2], p[i * 2 + 1], bx, by);
-        g_transform.apply(p[i * 2 + 2], p[i * 2 + 3], cx, cy);
-        pushVertex(ax, ay, 0.5f, 0.5f, g_state.color);
-        pushVertex(bx, by, 0.5f, 0.5f, g_state.color);
-        pushVertex(cx, cy, 0.5f, 0.5f, g_state.color);
+        putVertex(*o++, p[0], p[1], 0.5f, 0.5f, c);
+        putVertex(*o++, p[i * 2], p[i * 2 + 1], 0.5f, 0.5f, c);
+        putVertex(*o++, p[i * 2 + 2], p[i * 2 + 3], 0.5f, 0.5f, c);
     }
 }
 
@@ -490,6 +549,7 @@ void strokePolyline(Points p, bool closed) {
         inner.push_back(py - oy);
     }
     useTexture(g_white);
+    VColor col = vcolor(g_state.color);
     size_t segs = closed ? n : n - 1;
     for (size_t i = 0; i < segs; ++i) {
         size_t j = (i + 1) % n;
@@ -498,19 +558,19 @@ void strokePolyline(Points p, bool closed) {
         g_transform.apply(inner[i * 2], inner[i * 2 + 1], bx, by);
         g_transform.apply(outer[j * 2], outer[j * 2 + 1], cx, cy);
         g_transform.apply(inner[j * 2], inner[j * 2 + 1], dx, dy);
-        pushVertex(ax, ay, 0.5f, 0.5f, g_state.color);
-        pushVertex(bx, by, 0.5f, 0.5f, g_state.color);
-        pushVertex(cx, cy, 0.5f, 0.5f, g_state.color);
-        pushVertex(bx, by, 0.5f, 0.5f, g_state.color);
-        pushVertex(dx, dy, 0.5f, 0.5f, g_state.color);
-        pushVertex(cx, cy, 0.5f, 0.5f, g_state.color);
+        putQuad(ax, ay, bx, by, cx, cy, dx, dy, 0.5f, 0.5f, 0.5f, 0.5f, col);
     }
 }
 
 void readPoints(lua_State* L, int idx, Points& out) {
     if (lua_istable(L, idx)) {
         int n = (int)lua_objlen(L, idx);
-        for (int i = 1; i <= n; ++i) out.push_back((float)luax_numberindex(L, idx, i, 0));
+        out.resize(n);
+        for (int i = 1; i <= n; ++i) {
+            lua_rawgeti(L, idx, i);
+            out[i - 1] = (float)lua_tonumber(L, -1);   // 0 for non-numbers
+            lua_pop(L, 1);
+        }
     } else {
         for (int i = idx; i <= lua_gettop(L); ++i) out.push_back((float)luaL_checknumber(L, i));
     }
@@ -673,23 +733,25 @@ ShaderObject* checkShader(lua_State* L, int idx) { return (ShaderObject*)luax_ch
 
 int sh_send(lua_State* L) {
     ShaderObject* s = checkShader(L, 1);
-    std::string name = luax_checkstring(L, 2);
-    const gfx::UniformInfo* u = s->find(name);
-    if (!u) return 0;   // LÖVE errors here; we are lenient.
+    const char* name = luaL_checkstring(L, 2);
+    int ui = s->find(name);
+    if (ui < 0) return 0;   // LÖVE errors here; we are lenient.
+    const gfx::UniformInfo* u = &s->sh->uniforms[ui];
     if (u->type == gfx::UNIFORM_SAMPLER) {
         TextureObject* t = checkTexture(L, 3);
         if (g_state.shader.get() == s) flush();
-        s->sh->setUniformTexture(name, t->tex);
+        s->sh->setUniformTexture(ui, t->tex);
         return 0;
     }
     int comps = u->type == gfx::UNIFORM_MAT ? u->components * u->components : u->components;
-    std::vector<float> vals;
+    FloatBuf vals;
     int nargs = lua_gettop(L) - 2;
     int count = nargs < u->arraySize ? nargs : u->arraySize;
     if (count < 1) count = 1;
     for (int i = 0; i < count; ++i) {
         int idx = 3 + i;
-        if (lua_istable(L, idx)) {
+        int type = lua_type(L, idx);
+        if (type == LUA_TTABLE) {
             int n = (int)lua_objlen(L, idx);
             bool nested = n > 0 && (lua_rawgeti(L, idx, 1), lua_istable(L, -1));
             if (n > 0) lua_pop(L, 1);
@@ -698,33 +760,37 @@ int sh_send(lua_State* L) {
                 for (int r = 1; r <= n; ++r) {
                     lua_rawgeti(L, idx, r);
                     int t = lua_gettop(L);
-                    for (int c = 1; c <= u->components; ++c) vals.push_back((float)luax_numberindex(L, t, c, 0));
+                    for (int c = 1; c <= u->components; ++c) vals.push((float)luax_numberindex(L, t, c, 0));
                     lua_pop(L, 1);
                 }
             } else {
                 for (int k = 1; k <= comps; ++k) {
                     lua_rawgeti(L, idx, k);
-                    if (lua_isboolean(L, -1)) vals.push_back(lua_toboolean(L, -1) ? 1.0f : 0.0f);
-                    else vals.push_back((float)lua_tonumber(L, -1));
+                    if (lua_isboolean(L, -1)) vals.push(lua_toboolean(L, -1) ? 1.0f : 0.0f);
+                    else vals.push((float)lua_tonumber(L, -1));
                     lua_pop(L, 1);
                 }
             }
-        } else if (lua_isboolean(L, idx)) {
-            vals.push_back(lua_toboolean(L, idx) ? 1.0f : 0.0f);
-            for (int k = 1; k < comps; ++k) vals.push_back(0);
+        } else if (type == LUA_TBOOLEAN) {
+            vals.push(lua_toboolean(L, idx) ? 1.0f : 0.0f);
+            for (int k = 1; k < comps; ++k) vals.push(0);
         } else {
-            vals.push_back((float)luaL_checknumber(L, idx));
-            for (int k = 1; k < comps; ++k) vals.push_back(0);
+            vals.push((float)luaL_checknumber(L, idx));
+            for (int k = 1; k < comps; ++k) vals.push(0);
         }
     }
+    if (s->values.size() != s->sh->uniforms.size()) s->values.resize(s->sh->uniforms.size());
+    std::vector<float>& cur = s->values[ui];
+    if ((int)cur.size() == vals.n && memcmp(&cur[0], vals.data(), vals.n * sizeof(float)) == 0) return 0;
     if (g_state.shader.get() == s) flush();
-    s->sh->setUniform(name, &vals[0], (int)vals.size());
+    cur.assign(vals.data(), vals.data() + vals.n);
+    s->sh->setUniform(ui, vals.data(), vals.n);
     return 0;
 }
 
 int sh_hasUniform(lua_State* L) {
     ShaderObject* s = checkShader(L, 1);
-    lua_pushboolean(L, s->find(luax_checkstring(L, 2)) != NULL);
+    lua_pushboolean(L, s->find(luaL_checkstring(L, 2)) >= 0);
     return 1;
 }
 
@@ -1198,9 +1264,16 @@ int w_present(lua_State* L) {
                 plat::log("[graphics] failed to write %s", shot.c_str());
         }
     }
+    g_pacer.beforePresent(g_dev);
     g_dev->present();
+    g_pacer.afterPresent(g_dev);
+    profilerFrame();
     g_drawCallsLast = g_drawCalls;
     g_drawCalls = 0;
+    g_canvasSwitchesLast = g_canvasSwitches;
+    g_canvasSwitches = 0;
+    g_verticesLast = g_vertices;
+    g_vertices = 0;
     return 0;
 }
 
@@ -1656,8 +1729,10 @@ int w_getStats(lua_State* L) {
     lua_newtable(L);
     lua_pushinteger(L, g_drawCallsLast);
     lua_setfield(L, -2, "drawcalls");
-    lua_pushinteger(L, 0);
+    lua_pushinteger(L, g_canvasSwitchesLast);
     lua_setfield(L, -2, "canvasswitches");
+    lua_pushinteger(L, g_verticesLast);
+    lua_setfield(L, -2, "b360_vertices");
     lua_pushinteger(L, 0);
     lua_setfield(L, -2, "texturememory");
     lua_pushinteger(L, 0);
@@ -1671,6 +1746,36 @@ int w_getStats(lua_State* L) {
     lua_pushinteger(L, 0);
     lua_setfield(L, -2, "drawcallsbatched");
     return 1;
+}
+
+// Extension: love.graphics._b360_setFrameRate(60 | 30 | "auto" | "vsync").
+int w_setFrameRate(lua_State* L) {
+    FramePacer::Mode m = FramePacer::MODE_VSYNC;
+    if (lua_isnumber(L, 1)) {   // also "60" / "30"
+        int fps = (int)lua_tonumber(L, 1);
+        if (fps == 60) m = FramePacer::MODE_60;
+        else if (fps == 30) m = FramePacer::MODE_30;
+        else return luaL_error(L, "frame rate must be 60, 30 or \"auto\"");
+    } else {
+        const char* s = luaL_checkstring(L, 1);
+        if (strcmp(s, "auto") == 0) m = FramePacer::MODE_AUTO;
+        else if (strcmp(s, "vsync") != 0) return luaL_error(L, "frame rate must be 60, 30 or \"auto\"");
+    }
+    g_pacer.setMode(g_dev, m);
+    return 0;
+}
+
+// Extension: love.graphics._b360_startProfiler(interval_ms, report_seconds).
+int w_startProfiler(lua_State* L) {
+    profilerStart(L, luaL_optnumber(L, 1, 1.0), luaL_optnumber(L, 2, 30.0));
+    return 0;
+}
+
+// Extension: vblanks per frame (1 or 2), recent CPU ms per frame.
+int w_getFrameInfo(lua_State* L) {
+    lua_pushinteger(L, g_pacer.interval());
+    lua_pushnumber(L, g_pacer.cpuMs());
+    return 2;
 }
 
 // Extension: love.graphics._b360_setSafeArea(scale), scale in [0.5, 1].
@@ -1743,7 +1848,8 @@ const luaL_Reg kFuncs[] = {
     {"getStats", w_getStats}, {"getRendererInfo", w_getRendererInfo}, {"getSupported", w_trueTable},
     {"getSystemLimits", w_getSystemLimits}, {"getCanvasFormats", w_trueTable},
     {"getImageFormats", w_trueTable}, {"getTextureTypes", w_trueTable}, {"captureScreenshot", w_none},
-    {"_b360_setSafeArea", w_setSafeArea}, {"setStencilTest", w_none}, {"stencil", w_none}, {"flushBatch", w_none}, {"discard", w_none},
+    {"_b360_setSafeArea", w_setSafeArea}, {"_b360_setFrameRate", w_setFrameRate},
+    {"_b360_getFrameInfo", w_getFrameInfo}, {"_b360_startProfiler", w_startProfiler}, {"setStencilTest", w_none}, {"stencil", w_none}, {"flushBatch", w_none}, {"discard", w_none},
     {NULL, NULL}};
 
 }  // namespace

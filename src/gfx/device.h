@@ -78,10 +78,12 @@ public:
     virtual ~Shader() {}
     // Uniforms declared by the shader source (parsed by the core).
     std::vector<UniformInfo> uniforms;
-    // Values are kept on the shader object; the backend uploads them
-    // whenever the shader is used for drawing.
-    virtual void setUniform(const std::string& name, const float* values, int count) = 0;
-    virtual void setUniformTexture(const std::string& name, Texture* tex) = 0;
+    // index refers to uniforms[]. values holds the elements one after the
+    // other (components each; components^2 for matrices). The core only
+    // calls this when a value actually changed; the backend keeps it and
+    // uploads it whenever the shader is used for drawing.
+    virtual void setUniform(int index, const float* values, int count) = 0;
+    virtual void setUniformTexture(int index, Texture* tex) = 0;
 };
 
 class Device {
@@ -116,6 +118,11 @@ public:
                                Shader* shader, BlendMode blend) = 0;
 
     virtual void present() = 0;
+
+    // Frame pacing: show each frame for this many vertical blanks (1 = 60 Hz,
+    // 2 = 30 Hz). Returns false if the backend can't, in which case the core
+    // paces frames itself.
+    virtual bool setPresentInterval(int vblanks) { (void)vblanks; return false; }
 
     // Read back the current back buffer as RGBA8 (for host screenshots).
     virtual bool readBackbuffer(std::vector<u8>& rgba) { (void)rgba; return false; }

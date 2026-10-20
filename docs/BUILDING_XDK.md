@@ -159,12 +159,12 @@ Xenia runs `default.xex` directly; keep the `game\` folder next to it.
   on; lowering Xenia's log level (`log_level` in its config) keeps it small.
   `b360.log` only contains the runtime's own messages.
 * Frame rate in Xenia says little about the console; for real numbers use
-  `B360_LOG_PERF = true` in `game\b360_config.lua` on hardware (see README).
+  `B360_LOG_PERF = true` (and `B360_PROFILE = true` for where the time goes)
+  in `game\b360_config.lua` on hardware (see README).
 
 ## 5. Reporting results back
 
-The port hasn't been built against the real XDK yet, so the first builds will
-probably need some fixes. The quickest loop is:
+The quickest loop is:
 
 1. If the build fails, save the full build output (the `msbuild ... >
    build_log.txt` command above, or copy everything from Visual Studio's
@@ -191,6 +191,10 @@ the same list; it lives in `tools/gen_vcxproj.py` (`LIBS_DEBUG` /
 **`D3DRS_SEPARATEALPHABLENDENABLE` is undeclared**: add
 `B360_HAS_SEPARATEALPHABLENDENABLE=0` to **C/C++ → Preprocessor →
 Preprocessor Definitions**.
+
+**`D3DRS_PRESENTINTERVAL` is undeclared**: add
+`B360_HAS_PRESENTINTERVAL_RS=0` to **C/C++ → Preprocessor → Preprocessor
+Definitions**. 30 fps is then paced with timed waits instead.
 
 **"cannot instantiate abstract class" for `VoiceCallback`**: the XAudio2
 callback signatures differ in your XDK. Compare the `IXAudio2VoiceCallback`

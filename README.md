@@ -37,18 +37,13 @@ big-endian PowerPC.
 
 ## Status
 
-* Runs Balatro 1.0.1o on the Linux host build through the splash screen, main
-  menu, deck selection and into a run with controller input. Shaders, fonts,
-  audio, threads and saves all work.
-* The Xbox 360 backend (D3D9, XAudio2, XInput, file system, threads) is written
-  but **has not yet been compiled or run on real hardware**. Expect a few
-  rounds of fixing compiler and runtime issues. See
-  [docs/BUILDING_XDK.md](docs/BUILDING_XDK.md).
-* Performance is the main unknown. On the Linux build a frame of gameplay
-  costs about 13 ms of CPU with Lua 5.1 and 6.5 ms with LuaJIT's interpreter
-  (on a modern x86 core); the 360's in-order PowerPC cores are several times
-  slower per thread, so the LuaJIT configuration will likely be needed for a
-  smooth frame rate.
+* Playable on real hardware and in Xenia with the `Release LuaJIT`
+  configuration: menus run at 60 fps; in a round Balatro's own Lua logic needs
+  more than the 16.7 ms a 60 fps frame allows on the 360's CPU, so the runtime
+  then switches to a steady 30 fps (see `B360_FPS` below) instead of
+  alternating between the two.
+* The Linux build runs the same game code with scripted controller input,
+  for development and automated testing.
 
 ## Quick start
 
@@ -60,7 +55,7 @@ big-endian PowerPC.
 2. **Prepare the game folder** from your own copy of the game (Python 3):
 
    ```
-   python tools/prepare_game.py "path\to\Balatro.exe" out\Balatro360 --xex build\xbox360\out\Release\default.xex
+   python tools/prepare_game.py "path\to\Balatro.exe" out\Balatro360 --xex "build\xbox360\out\Release LuaJIT\default.xex"
    ```
 
 3. **Copy** `out\Balatro360` to wherever you launch unsigned XEX files from
@@ -86,11 +81,19 @@ return {
     F_HIDE_BG = false,      -- keep drawing the board while paused
 
     -- Balatro360 options (B360_*)
+    B360_FPS = "auto",      -- 60, 30 or "auto" (the default): 60 while the game
+                            -- keeps up, otherwise a steady 30
     B360_SAFE_AREA = 0.92,  -- shrink the picture if your TV crops the edges
-    B360_SHOW_FPS = true,   -- FPS / frame time overlay
-    B360_LOG_PERF = true,   -- average and worst frame time in b360.log every 10 s
+    B360_SHOW_FPS = true,   -- overlay: FPS, frame time, CPU time per frame
+                            -- and the current target ([60] or [30])
+    B360_LOG_PERF = true,   -- every 10 s in b360.log: frame times split into
+                            -- update / draw / present, draw calls
+    B360_PROFILE = true,    -- every 30 s in b360.log: the Lua functions the
+                            -- game spends its time in (slightly slower)
 }
 ```
+
+`b360.log` also notes every switch between 60 and 30 fps (`[pace]` lines).
 
 ### Files on the console
 
@@ -119,7 +122,7 @@ docs/               build, architecture and testing notes
 
 ## Roadmap
 
-* First console build and fixes (D3D9/XAudio2 details, performance).
+* More CPU time savings, guided by `B360_PROFILE` logs from hardware.
 * Shader binary cache on the console to speed up start-up.
 * Mipmapped textures on the 360.
 * Port the platform layer to the open-source

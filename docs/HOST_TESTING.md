@@ -54,6 +54,17 @@ out/host/b360
 | `B360_FIXED_DT` | fixed frame time in seconds; makes runs deterministic and independent of host speed |
 | `B360_MAX_FRAMES` | quit after this many frames |
 | `B360_WAV` | write the mixed audio to a WAV file |
+| `B360_NULL_VSYNC` | `1`: the null renderer behaves like a 60 Hz display (for frame pacing tests) |
+
+A `b360_config.lua` in the save folder works like on the console, e.g.
+`return { B360_LOG_PERF = 3, B360_PROFILE = 10 }` (numbers are the report
+intervals in seconds). Host runs are unpaced unless `B360_FPS` is set.
+
+`tests/pacing` checks the 60/30 switching against the emulated display:
+
+```
+B360_NULL_VSYNC=1 B360_GAME_DIR=tests/pacing B360_SAVE_DIR=/tmp/p out/host-null/b360
+```
 
 ## Input scripts
 

@@ -10,19 +10,35 @@ namespace rt {
 namespace {
 
 struct Proxy {
+    u32 magic;
     Object* obj;
     const char* type;   // static string owned by the TypeDef table
 };
+const u32 kProxyMagic = 0xB360B1EC;
 
-// Global (process wide) type table: name -> parent. Types are registered
-// once per lua_State, but the hierarchy is the same everywhere.
-std::map<std::string, const char*>& typeParents() {
-    static std::map<std::string, const char*> m;
-    return m;
-}
+// Type hierarchy: name -> parent. Filled when types are registered, which
+// happens on the main thread before any other thread exists (threads then
+// register the same names again, which changes nothing), so lookups need no
+// lock. The table is tiny; pointer comparisons usually hit first.
+struct TypeEntry {
+    const char* name;
+    const char* parent;
+};
+enum { MAX_TYPES = 64 };
+TypeEntry g_types[MAX_TYPES];
+volatile int g_typeCount = 0;
 plat::Mutex& typeMutex() {
     static plat::Mutex m;
     return m;
+}
+
+const char* typeParent(const char* t) {
+    int n = g_typeCount;
+    for (int i = 0; i < n; ++i)
+        if (g_types[i].name == t) return g_types[i].parent;
+    for (int i = 0; i < n; ++i)
+        if (strcmp(g_types[i].name, t) == 0) return g_types[i].parent;
+    return NULL;
 }
 
 const char* kObjectsKey = "b360.objects";
@@ -83,24 +99,22 @@ int proxyEq(lua_State* L) {
 
 bool luax_istype(const char* type, const char* base) {
     if (!type || !base) return false;
-    if (strcmp(base, "Object") == 0) return true;
-    plat::Lock lock(typeMutex());
-    std::map<std::string, const char*>& m = typeParents();
-    const char* t = type;
     int guard = 0;
-    while (t && guard++ < 16) {
-        if (strcmp(t, base) == 0) return true;
-        std::map<std::string, const char*>::iterator it = m.find(t);
-        if (it == m.end()) break;
-        t = it->second;
-    }
-    return false;
+    for (const char* t = type; t && guard++ < 16; t = typeParent(t))
+        if (t == base || strcmp(t, base) == 0) return true;
+    return strcmp(base, "Object") == 0;
 }
 
 void luax_registertype(lua_State* L, const TypeDef& def) {
     {
         plat::Lock lock(typeMutex());
-        typeParents()[def.name] = def.parent;
+        bool known = false;
+        for (int i = 0; i < g_typeCount && !known; ++i) known = strcmp(g_types[i].name, def.name) == 0;
+        if (!known && g_typeCount < MAX_TYPES) {
+            g_types[g_typeCount].name = def.name;
+            g_types[g_typeCount].parent = def.parent;
+            ++g_typeCount;
+        }
     }
     std::string key = std::string("b360.type.") + def.name;
     luaL_newmetatable(L, key.c_str());
@@ -177,6 +191,7 @@ void luax_pushobject(lua_State* L, const char* type, Object* obj) {
     lua_pop(L, 1);
 
     Proxy* p = (Proxy*)lua_newuserdata(L, sizeof(Proxy));
+    p->magic = kProxyMagic;
     p->obj = obj;
     p->type = type;
     obj->retain();
@@ -195,14 +210,11 @@ void luax_pushobject(lua_State* L, const char* type, Object* obj) {
 }
 
 const char* luax_objecttype(lua_State* L, int idx) {
-    if (lua_type(L, idx) != LUA_TUSERDATA) return NULL;
-    if (!lua_getmetatable(L, idx)) return NULL;
-    lua_getfield(L, -1, "__typename");
-    const char* name = lua_tostring(L, -1);
-    lua_pop(L, 2);
-    if (!name) return NULL;
+    // Only our proxies are full userdata of exactly this size with the magic
+    // number (no metatable lookups: this runs for every draw call).
+    if (lua_type(L, idx) != LUA_TUSERDATA || lua_objlen(L, idx) != sizeof(Proxy)) return NULL;
     Proxy* p = (Proxy*)lua_touserdata(L, idx);
-    return p ? p->type : NULL;
+    return p && p->magic == kProxyMagic ? p->type : NULL;
 }
 
 Object* luax_toobject(lua_State* L, int idx, const char* type) {

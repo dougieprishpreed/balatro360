@@ -211,7 +211,7 @@ private:
             ev.push_back(Variant::fromString(err));
             event::push("threaderror", ev);
         }
-        lua_close(L);
+        closeLuaState(L);
     }
 
     std::string code;

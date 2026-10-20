@@ -415,7 +415,10 @@
     <ClCompile Include="..\..\src\runtime\l_joystick.cpp" />
     <ClCompile Include="..\..\src\runtime\l_misc.cpp" />
     <ClCompile Include="..\..\src\runtime\l_thread.cpp" />
+    <ClCompile Include="..\..\src\runtime\lua_alloc.cpp" />
     <ClCompile Include="..\..\src\runtime\luax.cpp" />
+    <ClCompile Include="..\..\src\runtime\pacing.cpp" />
+    <ClCompile Include="..\..\src\runtime\profiler.cpp" />
     <ClCompile Include="..\..\src\runtime\runtime.cpp" />
     <ClCompile Include="..\..\src\runtime\variant.cpp" />
     <ClCompile Include="..\..\src\gfx\shader_translate.cpp" />
@@ -437,6 +440,7 @@
     <ClInclude Include="..\..\src\runtime\luax.h" />
     <ClInclude Include="..\..\src\runtime\modules.h" />
     <ClInclude Include="..\..\src\runtime\object.h" />
+    <ClInclude Include="..\..\src\runtime\pacing.h" />
     <ClInclude Include="..\..\src\runtime\runtime.h" />
     <ClInclude Include="..\..\src\runtime\variant.h" />
     <ClInclude Include="..\..\third_party\lua\src\lapi.h" />

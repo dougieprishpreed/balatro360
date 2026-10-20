@@ -29,6 +29,18 @@ void open_graphics(lua_State* L);
 // a portable os library.
 void open_compat(lua_State* L);
 
+// Sampling Lua profiler (profiler.cpp). profilerFrame() is called once per
+// frame by love.graphics.present() and writes a report to the log when one
+// is due.
+void profilerStart(lua_State* L, double intervalMs, double reportSeconds);
+void profilerFrame();
+void profilerStop();
+
+// Bare Lua state with the runtime's allocator (lua_alloc.cpp); close it
+// with closeLuaState().
+lua_State* newRawLuaState();
+void closeLuaState(lua_State* L);
+
 // Creates a fully initialised Lua state (all libraries + love modules).
 lua_State* newLuaState(bool mainThread);
 

@@ -56,13 +56,13 @@ public:
         return NULL;
     }
 
-    virtual void setUniform(const std::string& name, const float* v, int count) {
-        GLUniformValue& u = values[name];
+    virtual void setUniform(int index, const float* v, int count) {
+        GLUniformValue& u = values[uniforms[index].name];
         u.data.assign(v, v + count);
         u.dirty = true;
     }
-    virtual void setUniformTexture(const std::string& name, Texture* tex) {
-        (void)name;
+    virtual void setUniformTexture(int index, Texture* tex) {
+        (void)index;
         (void)tex;
     }
 

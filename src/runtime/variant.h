@@ -1,5 +1,8 @@
 // Thread-safe copy of a Lua value, used by love.thread channels and the
-// event queue. Tables are copied deeply (cycles are cut at a depth limit).
+// event queue. Tables are copied deeply from Lua (cycles are cut at a depth
+// limit) into an immutable, reference counted tree, so copying a Variant
+// (into and out of a channel queue) never copies the table again. Balatro
+// sends its whole save state through a channel.
 #ifndef B360_VARIANT_H
 #define B360_VARIANT_H
 
@@ -31,6 +34,7 @@ public:
     Type type() const { return t; }
 
 private:
+    struct TableData;
     void clear();
     void copyFrom(const Variant& o);
 
@@ -38,7 +42,7 @@ private:
     bool b;
     double n;
     std::string s;
-    std::vector<std::pair<Variant, Variant> >* table;
+    TableData* table;
     Object* obj;
     const char* objType;
 };

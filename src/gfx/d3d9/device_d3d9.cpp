@@ -28,6 +28,13 @@
 #define B360_HAS_SEPARATEALPHABLENDENABLE 1
 #endif
 
+// The 360's Direct3D can change the presentation interval at any time with
+// D3DRS_PRESENTINTERVAL. Set to 0 if your XDK lacks it; frames are then
+// paced with timed waits instead.
+#ifndef B360_HAS_PRESENTINTERVAL_RS
+#define B360_HAS_PRESENTINTERVAL_RS 1
+#endif
+
 namespace gfx {
 
 namespace {
@@ -43,8 +50,43 @@ public:
     XeTexture() : tex(NULL), linear(true), usedByGPU(false), needsRestore(false) {}
 };
 
-struct UniformValue {
-    std::vector<float> data;
+// Where one uniform lives in one stage's constant registers.
+struct ConstLoc {
+    int reg;             // first float4 register, -1 if the stage doesn't use it
+    int regs;            // registers it occupies
+    D3DXHANDLE handle;   // only for uniforms that need D3DX packing (matrices)
+    ConstLoc() : reg(-1), regs(0), handle(NULL) {}
+};
+
+void findConst(ID3DXConstantTable* table, const std::string& name, ConstLoc& loc, bool& packed) {
+    if (!table) return;
+    D3DXHANDLE h = table->GetConstantByName(NULL, name.c_str());
+    if (!h) h = table->GetConstantByName(NULL, (name + "_").c_str());   // renamed HLSL keyword
+    if (!h) return;
+    D3DXCONSTANT_DESC d;
+    UINT n = 1;
+    if (FAILED(table->GetConstantDesc(h, &d, &n)) || n < 1) return;
+    if (d.RegisterSet == D3DXRS_FLOAT4 && (d.Class == D3DXPC_SCALAR || d.Class == D3DXPC_VECTOR)) {
+        loc.reg = (int)d.RegisterIndex;
+        loc.regs = (int)d.RegisterCount;
+    } else {
+        loc.handle = h;
+        packed = true;
+    }
+}
+
+// 16-byte aligned float4 registers for Set*ShaderConstantF.
+inline float* align16(float* p) { return (float*)(((size_t)p + 15) & ~(size_t)15); }
+
+struct UniformSlot {
+    ConstLoc vs, ps;
+    bool packed;               // set through D3DX (matrices and other odd types)
+    int elemFloats;            // floats per array element as the core packs them
+    int regs;                  // float4 registers held in raw
+    std::vector<float> raw;    // registers (aligned via regData()); packed: the values
+    bool dirty;
+    UniformSlot() : packed(false), elemFloats(4), regs(0), dirty(false) {}
+    float* regData() { return align16(&raw[0]); }
 };
 
 class XeShader : public Shader {
@@ -53,10 +95,11 @@ public:
     IDirect3DPixelShader9* ps;
     ID3DXConstantTable* vsConst;
     ID3DXConstantTable* psConst;
-    std::map<std::string, UniformValue> values;
-    bool dirty;
+    std::vector<UniformSlot> slots;   // parallel to uniforms
+    ConstLoc projVS, screenVS, screenPS;
+    bool anyDirty;
 
-    XeShader() : vs(NULL), ps(NULL), vsConst(NULL), psConst(NULL), dirty(true) {}
+    XeShader() : vs(NULL), ps(NULL), vsConst(NULL), psConst(NULL), anyDirty(false) {}
     ~XeShader() {
         if (vs) vs->Release();
         if (ps) ps->Release();
@@ -64,39 +107,77 @@ public:
         if (psConst) psConst->Release();
     }
 
-    virtual void setUniform(const std::string& name, const float* v, int count) {
-        UniformValue& u = values[name];
-        u.data.assign(v, v + count);
-        dirty = true;
+    void resolveConstants() {
+        bool dummy = false;
+        findConst(vsConst, "love_ProjRows", projVS, dummy);
+        findConst(vsConst, "love_ScreenSize", screenVS, dummy);
+        findConst(psConst, "love_ScreenSize", screenPS, dummy);
+        slots.resize(uniforms.size());
+        for (size_t i = 0; i < uniforms.size(); ++i) {
+            const UniformInfo& u = uniforms[i];
+            UniformSlot& sl = slots[i];
+            if (u.type == UNIFORM_SAMPLER) continue;
+            findConst(vsConst, u.name, sl.vs, sl.packed);
+            findConst(psConst, u.name, sl.ps, sl.packed);
+            sl.elemFloats = u.type == UNIFORM_MAT ? u.components * u.components : u.components;
+            if (sl.packed) continue;
+            sl.regs = sl.vs.regs > sl.ps.regs ? sl.vs.regs : sl.ps.regs;
+            if (sl.regs > 0) sl.raw.assign(sl.regs * 4 + 3, 0.0f);
+        }
     }
-    virtual void setUniformTexture(const std::string& name, Texture* tex) {
-        (void)name;
+
+    virtual void setUniform(int index, const float* v, int count) {
+        if (index < 0 || index >= (int)slots.size()) return;
+        UniformSlot& sl = slots[index];
+        if (sl.packed) {
+            sl.raw.assign(v, v + count);
+        } else if (sl.regs > 0) {
+            // One array element per float4 register (SM3 never packs
+            // separate scalars into one register).
+            float* d = sl.regData();
+            int per = sl.elemFloats < 4 ? sl.elemFloats : 4;
+            for (int e = 0; e < sl.regs && e * sl.elemFloats < count; ++e)
+                for (int c = 0; c < per && e * sl.elemFloats + c < count; ++c)
+                    d[e * 4 + c] = v[e * sl.elemFloats + c];
+        }
+        sl.dirty = true;
+        anyDirty = true;
+    }
+    virtual void setUniformTexture(int index, Texture* tex) {
+        (void)index;
         (void)tex;   // Balatro only samples the main texture.
     }
 
-    static void setOne(ID3DXConstantTable* table, const std::string& name, const std::vector<float>& d) {
-        if (!table || d.empty()) return;
-        D3DXHANDLE h = table->GetConstantByName(NULL, name.c_str());
-        if (!h) return;
-        table->SetFloatArray(g_device, h, &d[0], (UINT)d.size());
+    static void uploadLoc(const ConstLoc& loc, bool vertex, const float* data) {
+        if (loc.reg < 0) return;
+        if (vertex) g_device->SetVertexShaderConstantF(loc.reg, data, loc.regs);
+        else g_device->SetPixelShaderConstantF(loc.reg, data, loc.regs);
     }
 
-    void upload(const float* projRows, const float* screen) {
-        if (vsConst) {
-            D3DXHANDLE h = vsConst->GetConstantByName(NULL, "love_ProjRows");
-            if (h) vsConst->SetFloatArray(g_device, h, projRows, 16);
-            h = vsConst->GetConstantByName(NULL, "love_ScreenSize");
-            if (h) vsConst->SetFloatArray(g_device, h, screen, 4);
+    void uploadSlot(UniformSlot& sl) {
+        sl.dirty = false;
+        if (sl.raw.empty()) return;
+        if (sl.packed) {
+            if (sl.vs.handle) vsConst->SetFloatArray(g_device, sl.vs.handle, &sl.raw[0], (UINT)sl.raw.size());
+            if (sl.ps.handle) psConst->SetFloatArray(g_device, sl.ps.handle, &sl.raw[0], (UINT)sl.raw.size());
+            return;
         }
-        if (psConst) {
-            D3DXHANDLE h = psConst->GetConstantByName(NULL, "love_ScreenSize");
-            if (h) psConst->SetFloatArray(g_device, h, screen, 4);
-        }
-        for (std::map<std::string, UniformValue>::iterator it = values.begin(); it != values.end(); ++it) {
-            setOne(vsConst, it->first, it->second.data);
-            setOne(psConst, it->first, it->second.data);
-        }
-        dirty = false;
+        uploadLoc(sl.vs, true, sl.regData());
+        uploadLoc(sl.ps, false, sl.regData());
+    }
+
+    // all: the registers hold another shader's values.
+    void upload(bool all) {
+        if (!all && !anyDirty) return;
+        for (size_t i = 0; i < slots.size(); ++i)
+            if (all || slots[i].dirty) uploadSlot(slots[i]);
+        anyDirty = false;
+    }
+
+    void uploadBuiltins(const float* projRows, const float* screen) {
+        if (projVS.reg >= 0) g_device->SetVertexShaderConstantF(projVS.reg, projRows, 4);
+        if (screenVS.reg >= 0) g_device->SetVertexShaderConstantF(screenVS.reg, screen, 1);
+        if (screenPS.reg >= 0) g_device->SetPixelShaderConstantF(screenPS.reg, screen, 1);
     }
 };
 
@@ -126,7 +207,8 @@ public:
     XeDevice()
         : d3d(NULL), w(0), h(0), backbuffer(NULL), canvasSurface(NULL), canvasW(0), canvasH(0),
           edramCanvasBase(0), current(NULL), dirtyCanvas(false), decl(NULL), defaultShader(NULL),
-          boundShader(NULL), boundTex(NULL), blend(-1) {}
+          boundShader(NULL), constOwner(NULL), constW(0), constH(0), boundTex(NULL), blend(-1),
+          presentInterval(1), needDecl(true) {}
 
     virtual bool init(int width, int height) {
         w = width;
@@ -264,6 +346,7 @@ public:
         s->uniforms = info.uniforms;
         s->vsConst = vtab;
         s->psConst = ptab;
+        s->resolveConstants();
         HRESULT hr1 = g_device->CreateVertexShader((const DWORD*)vcode->GetBufferPointer(), &s->vs);
         HRESULT hr2 = g_device->CreatePixelShader((const DWORD*)pcode->GetBufferPointer(), &s->ps);
         vcode->Release();
@@ -277,6 +360,7 @@ public:
     }
 
     virtual void destroyShader(Shader* sh) {
+        if (constOwner == sh) constOwner = NULL;
         if (boundShader == sh) {
             boundShader = NULL;
             g_device->SetVertexShader(NULL);
@@ -311,6 +395,7 @@ public:
         if (current) current->needsRestore = false;
         g_device->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_COLORVALUE(r, g, b, a), 1.0f, 0);
         dirtyCanvas = true;
+        afterInternalDraw();
     }
 
     virtual void setScissor(bool enabled, int x, int y, int sw, int sh) {
@@ -338,7 +423,10 @@ public:
         bindShader(s);
         bindTexture((XeTexture*)tex);
         applyBlend(b);
-        g_device->SetVertexDeclaration(decl);
+        if (needDecl) {
+            g_device->SetVertexDeclaration(decl);
+            needDecl = false;
+        }
         // DrawPrimitiveUP copies into the command ring buffer; keep each call
         // modest in size.
         const int maxVerts = 3 * 2048;
@@ -354,6 +442,22 @@ public:
     virtual void present() {
         if (current) setRenderTarget(NULL);
         g_device->Present(NULL, NULL, NULL, NULL);
+        afterInternalDraw();
+    }
+
+    virtual bool setPresentInterval(int n) {
+#if B360_HAS_PRESENTINTERVAL_RS
+        n = n >= 2 ? 2 : 1;
+        if (n != presentInterval) {
+            presentInterval = n;
+            g_device->SetRenderState(D3DRS_PRESENTINTERVAL,
+                                     n == 2 ? D3DPRESENT_INTERVAL_TWO : D3DPRESENT_INTERVAL_ONE);
+        }
+        return true;
+#else
+        (void)n;
+        return false;
+#endif
     }
 
     virtual const char* rendererName() const { return "Direct3D 9 (Xbox 360)"; }
@@ -370,8 +474,20 @@ private:
     IDirect3DVertexDeclaration9* decl;
     XeShader* defaultShader;
     XeShader* boundShader;
+    XeShader* constOwner;   // whose uniforms the constant registers hold
+    int constW, constH;     // target size the built-in constants were set for
     XeTexture* boundTex;
     int blend;
+    int presentInterval;
+    bool needDecl;          // vertex declaration must be (re)set before drawing
+
+    // Clear, Resolve and Present may be implemented with internal draws on
+    // the 360. Re-send the vertex declaration and all shader constants after
+    // them rather than trusting they survived (cheap: a few times a frame).
+    void afterInternalDraw() {
+        constOwner = NULL;
+        needDecl = true;
+    }
 
     bool ensureCanvasSurface(int tw, int th) {
         if (canvasSurface && tw <= canvasW && th <= canvasH) return true;
@@ -404,6 +520,7 @@ private:
         src.y2 = current->height;
         g_device->Resolve(D3DRESOLVE_RENDERTARGET0, &src, current->tex, NULL, 0, 0, NULL, 0.0f, 0, NULL);
         dirtyCanvas = false;
+        afterInternalDraw();
     }
 
     // Draw the canvas texture back into EDRAM (the game drew to a canvas
@@ -427,7 +544,10 @@ private:
         bindShader(defaultShader);
         bindTexture(t);
         applyBlend(BLEND_REPLACE);
-        g_device->SetVertexDeclaration(decl);
+        if (needDecl) {
+            g_device->SetVertexDeclaration(decl);
+            needDecl = false;
+        }
         g_device->DrawPrimitiveUP(D3DPT_TRIANGLELIST, 2, v, sizeof(Vertex));
         t->minFilter = mi;
         t->magFilter = ma;
@@ -461,22 +581,33 @@ private:
     }
 
     void bindShader(XeShader* s) {
-        float tw = (float)(current ? current->width : w);
-        float th = (float)(current ? current->height : h);
-        // Pixels (y down) -> clip space (y up).
-        float proj[16] = {
-            2.0f / tw, 0, 0, -1,
-            0, -2.0f / th, 0, 1,
-            0, 0, 1, 0,
-            0, 0, 0, 1};
-        float screen[4] = {tw, th, 1.0f, 0.0f};
+        int tw = current ? current->width : w;
+        int th = current ? current->height : h;
         if (boundShader != s) {
             g_device->SetVertexShader(s->vs);
             g_device->SetPixelShader(s->ps);
             boundShader = s;
         }
-        // Constants are device state shared by all shaders: upload every draw.
-        s->upload(proj, screen);
+        // Constants are device state shared by all shaders: after another
+        // shader drew, everything is re-uploaded; otherwise only what changed.
+        bool all = constOwner != s;
+        if (all || constW != tw || constH != th) {
+            // Pixels (y down) -> clip space (y up), then love_ScreenSize.
+            float buf[20 + 3];
+            float* c = align16(buf);
+            const float values[20] = {
+                2.0f / tw, 0, 0, -1,
+                0, -2.0f / th, 0, 1,
+                0, 0, 1, 0,
+                0, 0, 0, 1,
+                (float)tw, (float)th, 1.0f, 0.0f};
+            memcpy(c, values, sizeof(values));
+            s->uploadBuiltins(c, c + 16);
+            constW = tw;
+            constH = th;
+        }
+        s->upload(all);
+        constOwner = s;
     }
 
     void bindTexture(XeTexture* t) {
