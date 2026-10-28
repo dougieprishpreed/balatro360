@@ -13,11 +13,15 @@ renderer differ between the Xbox 360 and the Linux development build.
                 (C++98, platform independent)
           |                 |                          |
    src/gfx/device.h   plat:: audio callback   src/platform/platform.h
-     /     |     \                                /             \
-  d3d9/   gl/   null/                       xbox360/           posix/
- (360)  (Linux) (tests)                 (XDK: XInput,     (pthreads, files,
-                                         XAudio2, files)   scripted input)
+   /     |     |    \                          /          |          \
+vulkan/ d3d9/  gl/  null/                   xsdk/      xbox360/      posix/
+(360 xSDK (360   (Linux) (tests)           (pthreads,  (XDK: XInput, (pthreads,
+ + Linux) XDK)                              XAM input,  XAudio2,      files,
+                                            xSDK audio) files)        scripted input)
 ```
+
+The xSDK build (`build/xsdk`, `tools/xsdk`) uses `vulkan/` and `xsdk/`; the
+older XDK build (`build/xbox360`) uses `d3d9/` and `xbox360/`.
 
 ## Lua
 
@@ -136,7 +140,56 @@ too. All 19 Balatro shaders compile as `vs_3_0`/`ps_3_0` with vkd3d's HLSL
 compiler; the only remaining vkd3d failures are loops, which vkd3d's SM3
 backend doesn't implement yet and Microsoft's compiler handles.
 
-### Xbox 360 renderer (`src/gfx/d3d9/device_d3d9.cpp`)
+### Vulkan renderer (`src/gfx/vulkan/device_vk.cpp`)
+
+The xSDK build's renderer, on vulkan4xenon; on Linux the same code draws
+offscreen on any Vulkan 1.0 driver (`make GFX=vulkan`), which is how it is
+tested without a console.
+
+* One command buffer per frame, two frames in flight. vulkan4xenon replays
+  it into the GPU's ring at `vkQueueSubmit`. Each frame has its own region
+  of a vertex ring (4 MB), a uniform ring (1 MB) and a staging ring (8 MB);
+  a frame that fills one submits what it has and waits.
+* The back buffer (the swapchain on the console) and every canvas are
+  `B8G8R8A8` render targets, drawn in render passes that clear, load or
+  ignore what the image held, chosen when the pass begins; vulkan4xenon
+  keeps the targets in eDRAM and resolves them into their images. Without a
+  display (Linux) the back buffer is an offscreen image read back for
+  screenshots.
+* Images are `R8G8B8A8` optimal-tiled images filled with
+  `vkCmdCopyBufferToImage` from staging rows spaced as xsdk spaces a linear
+  texture's rows, at 4 KB-aligned offsets: vulkan4xenon then draws the copy
+  on the GPU instead of copying on the CPU after waiting for the GPU. Glyph
+  updates to a font page grow to vulkan4xenon's 8-pixel grid from a CPU
+  copy of the page for the same reason. Images made with `mipmaps = true`
+  (Balatro's atlases) get a full chain from a 2x2 box filter and are
+  sampled trilinearly.
+* Shaders: `buildVulkanGLSLStage` (`shader_translate.cpp`) wraps a LÖVE
+  shader into Vulkan GLSL 4.50. All uniforms go into one std140 block at a
+  dynamic offset (built-in projection and `love_ScreenSize` first; bools
+  and ints as floats); the main texture is binding 1. glslang
+  (glslang-xenon on the console) makes SPIR-V; on the console
+  vulkan4xenon compiles that with xost, xSDK's shader compiler, when the
+  module is made. Both results are cached under `game:\cache`.
+  The translator also keeps to xost's subset: functions with early
+  returns are rewritten to return once (xost inlines only those); bool
+  uniforms are tested with `> 0.5` (`bool(x)` is an unordered compare xost
+  lacks); `atan(y, x)` becomes a polynomial `b360_atan2`; `int n = 4;`
+  locals that never change become `const`; and the innermost loop of each
+  nest gets a bound of `+ int(VaryingTexCoord.z)` (always 0), which makes it
+  a hardware loop: unrolled, CRT's 7x7 bloom needed 67 registers and the
+  hologram's 9x9 glow 175, of the 64 a pixel shader has.
+  `tools/xsdk/check_shaders.py` runs the game's shaders through the same
+  steps and xost on the PC. A shader that still fails to build is drawn
+  with the default shader and logged, rather than stopping the game.
+* Writes into the GPU's write-combined memory go through xSDK's `memcpy`,
+  never inlined copies, which GCC turns into 8-byte stores that fault
+  there when not 8-byte aligned.
+* 30 fps: the swapchain shows a frame every vblank, so the 30 fps mode
+  queues each frame at least two vblanks after the last
+  (`xsdk_present_stats`).
+
+### Xbox 360 renderer, XDK (`src/gfx/d3d9/device_d3d9.cpp`)
 
 * Back buffer 1280x720 A8R8G8B8, vsync on. The console's scaler handles other
   output modes.

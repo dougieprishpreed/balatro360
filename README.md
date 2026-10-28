@@ -15,14 +15,17 @@ committed here or redistributed.
 Balatro is written in Lua on top of the [LÖVE](https://love2d.org) framework.
 Rather than porting LÖVE itself (SDL, OpenGL, OpenAL, LuaJIT, none of which
 exist on the 360), Balatro360 is a small, purpose-built runtime that implements
-the parts of the LÖVE 11 API the game uses, on top of the Xbox 360 XDK:
+the parts of the LÖVE 11 API the game uses. It builds with the open
+[xSDK](https://github.com/xenosworks/xsdk) toolchain and renders through
+[vulkan4xenon](https://github.com/xenosworks/vulkan4xenon), or, in the older
+build, with Microsoft's Xbox 360 XDK and Direct3D 9:
 
 | LÖVE piece | Balatro360 replacement |
 |---|---|
 | LuaJIT 2.1 | Either LuaJIT 2.0's own Xbox 360 interpreter build (recommended, about 2x faster) or PUC Lua 5.1.5 with a LuaJIT compatibility layer (`bit`, `jit`, LuaJIT's exact `math.random`, `math.log(x, base)`) |
-| OpenGL + GLSL shaders | Direct3D 9 on Xenos; the game's GLSL shaders are translated to HLSL at load time |
-| OpenAL + libvorbis | A software mixer feeding XAudio2; Ogg Vorbis via stb_vorbis |
-| SDL game controllers | XInput, exposed through `love.joystick` with the gamepad API |
+| OpenGL + GLSL shaders | Vulkan on vulkan4xenon: the game's shaders are translated to Vulkan GLSL at load time and compiled on the console (glslang, then xost), with the results cached. The XDK build uses Direct3D 9 and HLSL |
+| OpenAL + libvorbis | A software mixer feeding the console's audio (xSDK's feeder, or XAudio2); Ogg Vorbis via stb_vorbis |
+| SDL game controllers | XAM's controller input (XInput with the XDK), exposed through `love.joystick` with the gamepad API |
 | PhysFS | `game:\game\` (read-only data) overlaid by `game:\save\` |
 | FreeType | stb_truetype glyph atlases |
 
@@ -37,8 +40,10 @@ big-endian PowerPC.
 
 ## Status
 
-**Alpha.** Playable on real hardware and in Xenia with the `Release LuaJIT`
-configuration.
+**Alpha.** The XDK build (`Release LuaJIT`) is playable on real hardware and
+in Xenia. The xSDK build on the `xsdk` branch, which is to replace it, builds
+and runs the game on the PC through the same Vulkan renderer; it has not run
+on a console yet. Xenia doesn't run xSDK titles.
 
 * Menus run at a locked 60 fps (about 7 ms of CPU per frame).
 * In a round Balatro's own Lua logic takes about 20 ms of CPU per frame on
@@ -52,11 +57,10 @@ configuration.
 ## Quick start
 
 1. **Clone** this repository (`git clone https://github.com/dougieprishpreed/balatro360.git`).
-2. **Build the XEX** with Visual Studio 2010 and the Xbox 360 XDK: put
-   LuaJIT 2.0 in `third_party\luajit`, run `tools\xbox360\build_luajit.bat`,
-   then build `build/xbox360/Balatro360.sln` as `Release LuaJIT | Xbox 360`.
-   (`Release` builds without LuaJIT, using the slower Lua 5.1.)
-   Full instructions: [docs/BUILDING_XDK.md](docs/BUILDING_XDK.md).
+2. **Build the XEX** on Linux or in WSL with the open xSDK:
+   `tools/xsdk/bootstrap.sh` once, then `tools/xsdk/build.sh`
+   ([docs/BUILDING_XSDK.md](docs/BUILDING_XSDK.md)). The older Microsoft
+   XDK build is in [docs/BUILDING_XDK.md](docs/BUILDING_XDK.md).
 3. **Prepare the game folder** from your own copy of the game (Python 3):
 
    ```
@@ -108,19 +112,23 @@ return {
 | `game\` | game files extracted from your Balatro.exe |
 | `save\` | profiles and settings (same format as the PC version, so PC saves can be copied over) |
 | `b360.log` | runtime log; please include it in bug reports |
+| `cache\` | xSDK build: the shaders compiled on the first start (delete it after updating the game) |
+| `default.log` | xSDK build: the SDK's own log (start-up, exit, shader compiles) |
 
 ## Repository layout
 
 ```
 src/runtime/        LÖVE API implementation (platform independent C++)
-src/gfx/            renderer interface, GLSL->HLSL translator, backends:
-    d3d9/           Xbox 360 Direct3D 9
+src/gfx/            renderer interface, GLSL->HLSL/Vulkan GLSL translator, backends:
+    vulkan/         Vulkan 1.0: vulkan4xenon on the 360 (xSDK), any driver on Linux
+    d3d9/           Xbox 360 Direct3D 9 (XDK)
     gl/             Linux OpenGL (OSMesa, offscreen)
     null/           no rendering (big-endian test builds)
-src/platform/       OS layer: xbox360/ and posix/
+src/platform/       OS layer: xsdk/ (360, xSDK), xbox360/ (360, XDK) and posix/
 src/lua/            boot scripts embedded into the executable
 third_party/        Lua 5.1.5, LuaBitOp, stb, miniz (all permissively licensed)
-tools/              prepare_game.py, project generators
+tools/              prepare_game.py, project generators; xsdk/: the xSDK build
+build/xsdk/         CMake project for the xSDK build
 build/xbox360/      Visual Studio 2010 solution for the XDK
 docs/               build, architecture and testing notes
 ```
@@ -128,11 +136,11 @@ docs/               build, architecture and testing notes
 ## Roadmap
 
 * More CPU time savings, guided by `B360_PROFILE` logs from hardware.
-* Shader binary cache on the console to speed up start-up.
-* Mipmapped textures on the 360.
-* Port the platform layer to the open-source
-  [xenosworks/xsdk](https://github.com/xenosworks/xsdk) once it matures, so the
-  XEX can be built in CI without the Microsoft XDK.
+* Make the xSDK build the main one, built by GitHub Actions, and retire the
+  XDK build.
+
+Done in the xSDK build: the port to xSDK and vulkan4xenon, a shader binary
+cache on the console (`cache\`), and mipmapped textures.
 
 ## Credits and licenses
 

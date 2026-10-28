@@ -1,0 +1,72 @@
+name: xSDK build
+
+# Builds default.xex with the open xSDK toolchain at the dependency revisions
+# pinned in tools/xsdk/bootstrap.sh. No game data is involved: the artifact
+# is the executable and its licences, to put next to your own prepared game
+# folder (tools/prepare_game.py).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential gcc-multilib bison flex texinfo libgmp-dev libmpfr-dev libmpc-dev \
+            curl xz-utils patch python3 cmake ninja-build git ca-certificates
+
+      # The compiler and the pinned checkouts take most of the time; the
+      # cache key follows the pins.
+      - name: Restore pinned toolchain
+        id: toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            build-xsdk/toolchain
+            build-xsdk/deps/xsdk
+            build-xsdk/deps/vulkan4xenon
+            build-xsdk/deps/glslang-xenon
+            build-xsdk/deps/luajit
+          key: b360-xsdk-toolchain-v1-${{ runner.os }}-${{ hashFiles('tools/xsdk/bootstrap.sh') }}
+
+      - name: Build pinned toolchain
+        if: steps.toolchain.outputs.cache-hit != 'true'
+        run: |
+          B360_HOST_GLSLANG=0 JOBS=$(nproc) bash tools/xsdk/bootstrap.sh
+          rm -rf build-xsdk/deps/toolchain-work
+
+      - name: Build default.xex
+        run: |
+          export XSDK="$PWD/build-xsdk/deps/xsdk"
+          export VULKAN4XENON="$PWD/build-xsdk/deps/vulkan4xenon"
+          export GLSLANG_XENON="$PWD/build-xsdk/deps/glslang-xenon"
+          export LUAJIT="$PWD/build-xsdk/deps/luajit"
+          export XSDK_TOOLCHAIN="$PWD/build-xsdk/toolchain"
+          JOBS=$(nproc) bash tools/xsdk/build.sh
+
+      - name: Package
+        run: |
+          mkdir -p dist/licenses
+          cp build-xsdk/output/default.xex dist/
+          cp build-xsdk/output/licenses/* dist/licenses/
+          cp README.md dist/README.md
+          cp THIRD_PARTY.md dist/THIRD_PARTY.md
+          (cd dist && sha256sum default.xex | tee default.xex.sha256)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: balatro360-xex
+          path: dist/
