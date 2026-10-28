@@ -112,10 +112,15 @@ There's no emulator, so two host checks stand in before a console run:
 
   ```
   python3 tools/xsdk/check_shaders.py --xsdk $XSDK --glslang build-xsdk/deps/glslang-host/StandAlone/glslang \
-      --tool out/host/b360-shadertool --empty out/Balatro360/game/resources/shaders/*.fs
+      --tool out/host/b360-shadertool --empty --simulate 100 out/Balatro360/game/resources/shaders/*.fs
   ```
 
   `make -C $XSDK build/host/libxsc.so` builds the xost library it loads.
+  `--simulate` also runs each stage on xost's model of the GPU
+  (`xenos-toolchain/xdis/simulate.py`) for random inputs, built with and
+  without xost's optimiser, and checks the stock `position()`: that's how the
+  two miscompiles below were found, which compile fine and only showed as
+  wrong pictures on the console.
 * **The Vulkan renderer itself.** `make GFX=vulkan` builds the host runtime
   with the same backend, drawing offscreen on any Vulkan driver (Mesa's
   lavapipe: `apt install mesa-vulkan-drivers libvulkan-dev
@@ -138,6 +143,13 @@ There's no emulator, so two host checks stand in before a console run:
     (bloom off), the backend sets the loop to no passes.
   * `atan(y, x)` is a polynomial (xost has no atan2), and early returns are
     rewritten to one return, the only helpers xost inlines.
+  * `position()` reads `TransformProjectionMatrix` itself rather than its
+    `mat4` parameter: xost multiplies by a matrix copied into a parameter or
+    local as if it were transposed (only a block's own matrix keeps its
+    column-major layout), which put every vertex of the default shader in
+    the wrong place.
+  * `length()` is `sqrt(dot(v, v))`: with xost's optimiser, which
+    vulkan4xenon always runs, a shader's second `length()` came out wrong.
 * Frame pacing: vulkan4xenon's swapchain shows a frame per vblank; the 30
   fps mode queues frames two vblanks apart.
 * Audio goes through xSDK's feeder for the kernel's render driver; the mix

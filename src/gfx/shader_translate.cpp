@@ -598,14 +598,17 @@ struct VkLoop {
 class VkTranslator {
 public:
     VkTranslator(const std::vector<Token>& t, const LoveShaderInfo& i, bool vertex, std::vector<std::string>* w)
-        : toks(t), info(i), warnings(w), vertexStage(vertex), voidFunc(false), usesAtan2(false) {
+        : toks(t), info(i), warnings(w), vertexStage(vertex), voidFunc(false), usesAtan2(false), usesLength(false),
+          posBodyB(0), posBodyE(0) {
         markUniformDecls();
         collectIntDefines();
         markConstLocals();
-        if (!vertexStage) markInnerLoops();
+        if (vertexStage) markPositionMatrix();
+        else markInnerLoops();
     }
 
     bool needsAtan2() const { return usesAtan2; }
+    bool needsLength() const { return usesLength; }
     const std::vector<VkHardwareLoop>& hardwareLoops() const { return hwLoops; }
 
     std::string run() {
@@ -656,10 +659,45 @@ private:
     bool vertexStage;
     std::string retType;
     bool voidFunc;
-    bool usesAtan2;
+    bool usesAtan2, usesLength;
+    std::string posMatrix;      // position()'s mat4 parameter, and its body's tokens
+    size_t posBodyB, posBodyE;
 
     void warn(const std::string& s) {
         if (warnings) warnings->push_back(s);
+    }
+
+    // xost multiplies by a matrix copied into a parameter or local as if it
+    // were transposed (only a block's own matrix keeps its column-major
+    // layout), so position() reads TransformProjectionMatrix itself, which
+    // main() passes it.
+    void markPositionMatrix() {
+        size_t n = toks.size();
+        int depth = 0;
+        for (size_t i = 0; i < n; ++i) {
+            const Token& t = toks[i];
+            if (t.preproc || isTrivia(t)) continue;
+            if (t.kind == TK_PUNCT) {
+                if (t.text == "{") ++depth;
+                else if (t.text == "}") --depth;
+                continue;
+            }
+            if (depth != 0 || t.text != "vec4") continue;
+            size_t name = nextSig(toks, i + 1, n);
+            size_t open = nextSig(toks, name + 1, n);
+            size_t ty = nextSig(toks, open + 1, n);
+            size_t param = nextSig(toks, ty + 1, n);
+            if (param >= n || toks[name].text != "position" || toks[open].text != "(" || toks[ty].text != "mat4" ||
+                toks[param].kind != TK_IDENT)
+                continue;
+            size_t close = matchParen(toks, open, n);
+            size_t brace = nextSig(toks, close + 1, n);
+            if (brace >= n || toks[brace].text != "{") continue;
+            posMatrix = toks[param].text;
+            posBodyB = brace;
+            posBodyE = matchBrace(brace, n);
+            return;
+        }
     }
 
     // xost unrolls loops with constant counts, and a nest of them can need
@@ -1081,6 +1119,16 @@ private:
                 while (i < e && toks[i].text != ";") ++i;
                 continue;
             }
+            if (!posMatrix.empty() && i > posBodyB && i < posBodyE && t.text == posMatrix) {
+                out += "TransformProjectionMatrix";
+                continue;
+            }
+            if (call && t.text == "length") {
+                // xost's optimiser gets a second length() in a shader wrong.
+                usesLength = true;
+                out += "b360_length";
+                continue;
+            }
             if (call && (t.text == "Texel" || t.text == "texture2D")) {
                 out += "love_Texel";
                 continue;
@@ -1419,6 +1467,12 @@ std::string buildVulkanGLSLStage(const std::string& src, const LoveShaderInfo& i
              "layout(location = 1) in vec4 VaryingColor;\n"
              "layout(set = 0, binding = 1) uniform sampler2D love_MainTex;\n"
              "layout(location = 0) out vec4 love_FragOut;\n";
+    }
+    if (tr.needsLength()) {
+        s += "float b360_length(float v) { return abs(v); }\n"
+             "float b360_length(vec2 v) { return sqrt(dot(v, v)); }\n"
+             "float b360_length(vec3 v) { return sqrt(dot(v, v)); }\n"
+             "float b360_length(vec4 v) { return sqrt(dot(v, v)); }\n";
     }
     if (tr.needsAtan2()) {
         // atan(y, x) from a polynomial for atan on [0, 1] (error below 1e-5),
