@@ -43,6 +43,10 @@ const int kTriggerThreshold = 30;
 double g_start = 0.0;
 bool g_quit = false;
 double g_quitComboStart = -1.0;
+// Hold BACK and press RB for a screenshot (Balatro doesn't use BACK).
+bool g_shotHeld = false;
+bool g_shotWanted = false;
+int g_shotNumber = 0;
 
 double monotonic() {
     struct timespec ts;
@@ -139,14 +143,17 @@ const char* osName() { return "Xbox 360"; }
 bool pump() {
     // Hold BACK + START for one second to quit to the dashboard. This also
     // works on error screens, which otherwise wait for a keyboard Escape.
-    bool combo = false;
+    bool combo = false, shot = false;
     for (u32 i = 0; i < MAX_PADS; ++i) {
         INPUT_STATE st;
         if (XamInputGetState(i, 0, &st) == 0) {
             u16 b = st.gamepad.buttons;
             if ((b & INPUT_GAMEPAD_BACK) && (b & INPUT_GAMEPAD_START)) combo = true;
+            if ((b & INPUT_GAMEPAD_BACK) && (b & INPUT_GAMEPAD_RIGHT_SHOULDER)) shot = true;
         }
     }
+    if (shot && !g_shotHeld) g_shotWanted = true;
+    g_shotHeld = shot;
     double now = getTime();
     if (combo) {
         if (g_quitComboStart < 0) g_quitComboStart = now;
@@ -403,7 +410,8 @@ void padPoll(PadState pads[MAX_PADS]) {
         p.buttons[PAD_LEFTSTICK] = (b & INPUT_GAMEPAD_LEFT_THUMB) != 0;
         p.buttons[PAD_RIGHTSTICK] = (b & INPUT_GAMEPAD_RIGHT_THUMB) != 0;
         p.buttons[PAD_LEFTSHOULDER] = (b & INPUT_GAMEPAD_LEFT_SHOULDER) != 0;
-        p.buttons[PAD_RIGHTSHOULDER] = (b & INPUT_GAMEPAD_RIGHT_SHOULDER) != 0;
+        // RB with BACK held takes a screenshot (pump), not a game input.
+        p.buttons[PAD_RIGHTSHOULDER] = (b & INPUT_GAMEPAD_RIGHT_SHOULDER) != 0 && !(b & INPUT_GAMEPAD_BACK);
         p.buttons[PAD_DPUP] = (b & INPUT_GAMEPAD_DPAD_UP) != 0;
         p.buttons[PAD_DPDOWN] = (b & INPUT_GAMEPAD_DPAD_DOWN) != 0;
         p.buttons[PAD_DPLEFT] = (b & INPUT_GAMEPAD_DPAD_LEFT) != 0;
@@ -520,8 +528,21 @@ int processorCount() { return XSDK_HARDWARE_THREADS; }
 double fixedTimestep() { return 0.0; }
 
 bool screenshotRequested(std::string& path) {
-    (void)path;
-    return false;
+    if (!g_shotWanted) return false;
+    g_shotWanted = false;
+    dirCreate("game:/shots");
+    // shot_0001.png and on, past the ones already there.
+    for (;;) {
+        ++g_shotNumber;
+        char digits[5];
+        int v = g_shotNumber;
+        for (int i = 3; i >= 0; --i, v /= 10) digits[i] = (char)('0' + v % 10);
+        digits[4] = 0;
+        path = std::string("game:/shots/shot_") + digits + ".png";
+        struct stat sb;
+        if (stat(path.c_str(), &sb) != 0 || g_shotNumber >= 9999) break;
+    }
+    return true;
 }
 
 }  // namespace plat

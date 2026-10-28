@@ -91,10 +91,14 @@ Copy `out\Balatro360` to the console (USB or hard disk) and launch
 | `cache\spirv\` | the game's shaders as SPIR-V, so later starts skip glslang (about a second) |
 | `cache\xenos\` | the same shaders compiled for Xenos by vulkan4xenon, so later starts skip that too |
 | `default.log` | xSDK's own log (start-up, exit, vulkan4xenon's messages, shader compile times) |
+| `shots\` | screenshots: hold **BACK** and press **RB**, and the next frame is saved as a PNG |
 
 `b360.log` is the runtime's log, as before. The first start compiles all
 shaders on the console and is slower; delete `cache\` after updating the
 game. Hold **BACK + START** for a second to quit to the dashboard.
+`B360_GPU_PROFILE = true` in `game\b360_config.lua` logs one frame's GPU time
+per shader and render pass every 10 s, each draw timed on its own, with the
+CPU's waits for the GPU.
 
 ## Checking on the PC
 
@@ -121,6 +125,19 @@ There's no emulator, so two host checks stand in before a console run:
 
 ## Notes
 
+* What the translator does for xost (`src/gfx/shader_translate.cpp`,
+  `VkTranslator`), as the XDK's HLSL compiler did these itself:
+  * `sin`, `cos` and `tan` take their angle moved into -pi..pi first: xost
+    emits the bare hardware ops, which are only right there
+    (xost's `docs/xsc.md`, "Approximate builtins").
+  * The innermost loop of a nest (CRT's bloom, the hologram's glow) is a
+    hardware loop counted by an int in the uniform block, `i < b360_loopN`;
+    unrolled, the nests need more than 64 registers, and a loop counted by
+    anything else runs a fixed 255 passes. xost runs an `if` whose arm holds
+    a loop for every pixel, so where the `if` compares uniforms with numbers
+    (bloom off), the backend sets the loop to no passes.
+  * `atan(y, x)` is a polynomial (xost has no atan2), and early returns are
+    rewritten to one return, the only helpers xost inlines.
 * Frame pacing: vulkan4xenon's swapchain shows a frame per vblank; the 30
   fps mode queues frames two vblanks apart.
 * Audio goes through xSDK's feeder for the kernel's render driver; the mix

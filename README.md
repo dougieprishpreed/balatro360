@@ -77,6 +77,8 @@ Balatro's own controller support is used unchanged (A select, B back, etc.).
 
 * **Hold BACK + START for one second** to quit to the dashboard from anywhere,
   including error screens.
+* **Hold BACK and press RB** for a screenshot (xSDK build): the next frame
+  is saved as `shots\shot_0001.png` and on.
 
 ### Configuration
 
@@ -99,6 +101,8 @@ return {
                             -- update / draw / present, draw calls
     B360_PROFILE = true,    -- every 30 s in b360.log: the Lua functions the
                             -- game spends its time in (slightly slower)
+    B360_GPU_PROFILE = true, -- xSDK build, every 10 s in b360.log: the GPU
+                            -- time of each shader and render pass in one frame
 }
 ```
 
@@ -114,6 +118,7 @@ return {
 | `b360.log` | runtime log; please include it in bug reports |
 | `cache\` | xSDK build: the shaders compiled on the first start (delete it after updating the game) |
 | `default.log` | xSDK build: the SDK's own log (start-up, exit, shader compiles) |
+| `shots\` | xSDK build: screenshots (BACK + RB) |
 
 ## Repository layout
 

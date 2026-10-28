@@ -17,6 +17,8 @@ local hooks = {}
 --                             draw / present, with draw call counts
 --     B360_PROFILE = true     also log the hottest Lua functions every 30 s
 --                             (costs a little speed while enabled)
+--     B360_GPU_PROFILE = true log the GPU time of each draw of one frame
+--                             every 10 s (xSDK build)
 --     B360_SAFE_AREA = 0.9    shrink the picture for TVs that crop the edges
 local user_config
 local function config()
@@ -75,6 +77,9 @@ local function install_perf_tools(cfg)
 	local log_perf = cfg.B360_LOG_PERF or cfg.B360_PROFILE
 	if cfg.B360_PROFILE and love.graphics._b360_startProfiler then
 		love.graphics._b360_startProfiler(1, type(cfg.B360_PROFILE) == "number" and cfg.B360_PROFILE or 30)
+	end
+	if cfg.B360_GPU_PROFILE and love.graphics._b360_gpuProfile then
+		love.graphics._b360_gpuProfile(type(cfg.B360_GPU_PROFILE) == "number" and cfg.B360_GPU_PROFILE or 10)
 	end
 	local window = type(cfg.B360_LOG_PERF) == "number" and cfg.B360_LOG_PERF or 10
 	if not (cfg.B360_SHOW_FPS or log_perf) then return end

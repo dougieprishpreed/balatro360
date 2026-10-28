@@ -37,22 +37,43 @@ std::string buildGLSLStage(const std::string& src, const LoveShaderInfo& info, b
 std::string buildHLSLStage(const std::string& src, const LoveShaderInfo& info, bool vertexStage,
                            std::vector<std::string>* warnings);
 
+// A pixel-stage loop the Vulkan translator made a hardware loop: its
+// condition became "i < b360_loopK", an int in LoveUniforms that the backend
+// sets to count, or to start (no passes) while a guard fails. The guards are
+// the uniform comparisons of the ifs around it, which xost doesn't branch on
+// when an arm holds a loop: it runs both arms for every pixel.
+struct VkLoopGuard {
+    enum Op { GT, GE, LT, LE };
+    int uniform;   // index into LoveShaderInfo::uniforms, a float
+    Op op;
+    float value;   // uniforms[uniform] op value
+};
+struct VkHardwareLoop {
+    int start, count;
+    std::vector<VkLoopGuard> guards;   // all must hold
+};
+
 // Complete Vulkan GLSL 4.50 source for one stage, for glslang -V (Vulkan
 // backend). Interface:
 //   set 0, binding 0: std140 uniform block LoveUniforms, at a dynamic offset:
 //                     mat4 TransformProjectionMatrix, vec4 love_ScreenSize,
-//                     then the shader's uniforms (vulkanUniformLayout)
+//                     then the shader's uniforms (vulkanUniformLayout), then
+//                     the pixel stage's loop counts, an int each
 //   set 0, binding 1: sampler2D love_MainTex
 //   vertex inputs:    location 0 vec2 position, 1 vec4 colour, 2 vec2 texcoord
 // Functions with early returns are rewritten to return once, as xost (the
-// console's shader compiler) inlines only those.
+// console's shader compiler) inlines only those. loops (pixel stage) gets
+// the hardware loops, in the order of their ints.
 std::string buildVulkanGLSLStage(const std::string& src, const LoveShaderInfo& info, bool vertexStage,
-                                 std::vector<std::string>* warnings);
+                                 std::vector<std::string>* warnings, std::vector<VkHardwareLoop>* loops = NULL);
 
 // std140 byte offset of each of info.uniforms in LoveUniforms (-1 for
 // samplers), and the block's size. bools and ints are stored as floats.
+// The loop counts follow at blockBytes, 4 bytes apart (vulkanLoopBlockBytes
+// is the size with them).
 enum { VK_BUILTIN_UNIFORM_BYTES = 80 };
 void vulkanUniformLayout(const LoveShaderInfo& info, std::vector<int>& offsets, int& blockBytes);
+int vulkanLoopBlockBytes(int blockBytes, int loops);
 
 }  // namespace gfx
 

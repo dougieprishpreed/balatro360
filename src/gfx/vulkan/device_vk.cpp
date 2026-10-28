@@ -27,6 +27,7 @@
 #include <xsdk/present.h>
 #endif
 
+#include <algorithm>
 #include <map>
 #include <stdlib.h>
 #include <string.h>
@@ -50,6 +51,7 @@ const VkDeviceSize kUniformAlign = 256;              // minUniformBufferOffsetAl
 const VkDeviceSize kUniformRange = 2048;             // the most a shader's block may use
 const VkFormat kTargetFormat = VK_FORMAT_B8G8R8A8_UNORM;
 const VkFormat kTextureFormat = VK_FORMAT_R8G8B8A8_UNORM;
+const u32 kFrameStamps = 1024;                       // time stamps a GPU-profiled frame takes at most
 
 #ifdef __XSDK__
 // GCC turns small copies into 8-byte stores, which fault in the GPU's
@@ -100,6 +102,8 @@ public:
     std::vector<int> offsets;      // std140 offset of each uniform
     std::vector<u8> block;         // the uniform block, builtins first
     int blockBytes;
+    std::vector<VkHardwareLoop> loops;   // the pixel stage's, their ints from loopAt
+    int loopAt;
     bool dirty;
     u32 uploadedSerial;            // frame the block was last written in
     VkDeviceSize uploadedOffset;
@@ -107,8 +111,33 @@ public:
     std::map<u32, VkPipeline> pipelines;   // by blend mode and colour mask
 
     VkShaderObj()
-        : vs(VK_NULL_HANDLE), fs(VK_NULL_HANDLE), blockBytes(VK_BUILTIN_UNIFORM_BYTES), dirty(true),
+        : vs(VK_NULL_HANDLE), fs(VK_NULL_HANDLE), blockBytes(VK_BUILTIN_UNIFORM_BYTES), loopAt(0), dirty(true),
           uploadedSerial(0), uploadedOffset(0), uploadedW(0), uploadedH(0) {}
+
+    // Each loop's int: its count, or its start (no passes) where a guard
+    // fails, as the console runs the if around it for every pixel.
+    void putLoopCounts() {
+        for (size_t k = 0; k < loops.size(); ++k) {
+            const VkHardwareLoop& l = loops[k];
+            bool on = true;
+            for (size_t g = 0; g < l.guards.size() && on; ++g) {
+                const VkLoopGuard& gd = l.guards[g];
+                int at = gd.uniform < (int)offsets.size() ? offsets[gd.uniform] : -1;
+                if (at < 0 || at + 4 > (int)block.size()) continue;
+                float v;
+                memcpy(&v, &block[at], 4);
+                switch (gd.op) {
+                case VkLoopGuard::GT: on = v > gd.value; break;
+                case VkLoopGuard::GE: on = v >= gd.value; break;
+                case VkLoopGuard::LT: on = v < gd.value; break;
+                default: on = v <= gd.value; break;
+                }
+            }
+            int n = on ? l.count : l.start;
+            int at = loopAt + 4 * (int)k;
+            if (at + 4 <= (int)block.size()) memcpy(&block[at], &n, 4);
+        }
+    }
 
     virtual void setUniform(int index, const float* v, int count) {
         if (index < 0 || index >= (int)uniforms.size() || offsets[index] < 0) return;
@@ -168,6 +197,7 @@ struct Frame {
     std::vector<Buffer> spareStaging;   // big uploads, freed when the frame is done
     std::vector<VkTex*> deadTextures;
     std::vector<VkShaderObj*> deadShaders;
+    std::vector<std::string> stamps;    // a GPU-profiled frame's time stamps: what each one ends
     Frame() : cmd(VK_NULL_HANDLE), fence(VK_NULL_HANDLE), acquired(VK_NULL_HANDLE), rendered(VK_NULL_HANDLE) {}
 };
 
@@ -181,7 +211,9 @@ public:
           passOpen(false), pendingClear(false), passTex(NULL), vertexUsed(0), uniformUsed(0), stagingUsed(0),
           boundPipeline(VK_NULL_HANDLE), boundSet(VK_NULL_HANDLE), boundOffset(~(VkDeviceSize)0),
           defaultShader(NULL), scissorOn(false), sx(0), sy(0), sw(0), sh(0), maskBits(15), interval(1),
-          lastQueueVblank(0) {
+          lastQueueVblank(0), captureTex(NULL), captureWanted(false), captureFrame(false),
+          queryPool(VK_NULL_HANDLE), tickNs(1.0f), gpuEvery(0.0), gpuLast(0.0), profiling(false), cpuFence(0.0),
+          cpuAcquire(0.0), cpuSubmit(0.0), cpuPresent(0.0), cpuFrames(0) {
         memset(clearColor, 0, sizeof(clearColor));
         memset(samplers, 0, sizeof(samplers));
     }
@@ -210,8 +242,10 @@ public:
             plat::log("[vk] default shader failed:\n%s", err.c_str());
             return false;
         }
+        defaultShader->name = "default";
         VkPhysicalDeviceProperties props;
         vkGetPhysicalDeviceProperties(phys, &props);
+        tickNs = props.limits.timestampComputeAndGraphics ? props.limits.timestampPeriod : 0.0f;
         plat::log("[vk] %s, %dx%d%s", props.deviceName, w, h, headless ? " (offscreen)" : "");
         return true;
     }
@@ -413,10 +447,12 @@ public:
         gpuCopy(vertexRing.map + frame * kVertexRing + vertexUsed, verts, (size_t)bytes);
         vertexUsed += bytes;
         vkCmdDraw(cmd, (u32)count, 1, first, 0);
+        if (profiling) stamp(s->name + " -> " + targetName(passTex));
     }
 
     virtual void present() {
         beginFrame();
+        finishCapture(false);
         if (!headless && !acquired) {
             // Nothing drew to the screen this frame: show it cleared.
             setRenderTarget(NULL);
@@ -428,6 +464,8 @@ public:
         setRenderTarget(NULL);
         endPass();
         Frame& f = frames[frame];
+        if (profiling) stamp("end of frame");
+        profiling = false;
         vkEndCommandBuffer(f.cmd);
         VkSubmitInfo si;
         memset(&si, 0, sizeof(si));
@@ -441,7 +479,13 @@ public:
         si.pCommandBuffers = &f.cmd;
         si.signalSemaphoreCount = acquired ? 1 : 0;
         si.pSignalSemaphores = &f.rendered;
+        double t0 = gpuEvery > 0 ? plat::getTime() : 0.0;
         vkOk(vkQueueSubmit(queue, 1, &si, f.fence), "vkQueueSubmit");
+        double t1 = gpuEvery > 0 ? plat::getTime() : 0.0;
+        if (gpuEvery > 0) {
+            cpuSubmit += t1 - t0;
+            ++cpuFrames;
+        }
         if (acquired) {
             paceBeforePresent();
             VkPresentInfoKHR pi;
@@ -453,6 +497,7 @@ public:
             pi.pSwapchains = &swapchain;
             pi.pImageIndices = &imageIndex;
             vkOk(vkQueuePresentKHR(queue, &pi), "vkQueuePresentKHR");
+            if (gpuEvery > 0) cpuPresent += plat::getTime() - t1;
         }
         acquired = false;
         acquireWaited = false;
@@ -471,33 +516,64 @@ public:
 #endif
     }
 
+    // Offscreen, the frame's image; on a display, a frame captureNextFrame()
+    // drew into an image of its own.
     virtual bool readBackbuffer(std::vector<u8>& rgba) {
-        if (!headless) return false;
-        setRenderTarget(NULL);
-        ensurePass();   // the frame may not have drawn to it
-        endPass();
+        if (!headless && !captureFrame && !(captureWanted && !acquired)) return false;
         VkDeviceSize bytes = (VkDeviceSize)w * h * 4;
         if (readback.size < bytes) {
             destroyBuffer(readback);
             if (!makeBuffer(readback, bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT)) return false;
         }
-        VkBufferImageCopy region;
-        memset(&region, 0, sizeof(region));
-        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        region.imageSubresource.layerCount = 1;
-        region.imageExtent.width = (u32)w;
-        region.imageExtent.height = (u32)h;
-        region.imageExtent.depth = 1;
-        vkCmdCopyImageToBuffer(frames[frame].cmd, offscreen->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buf,
-                               1, &region);
-        flushAndWait();
-        rgba.resize((size_t)bytes);
-        for (size_t i = 0; i < (size_t)w * h; ++i) {   // BGRA -> RGBA
-            rgba[i * 4 + 0] = readback.map[i * 4 + 2];
-            rgba[i * 4 + 1] = readback.map[i * 4 + 1];
-            rgba[i * 4 + 2] = readback.map[i * 4 + 0];
-            rgba[i * 4 + 3] = readback.map[i * 4 + 3];
+        beginFrame();
+        if (headless) {
+            setRenderTarget(NULL);
+            ensurePass();   // the frame may not have drawn to it
+            endPass();
+            copyToReadback(offscreen);
+        } else {
+            if (!captureFrame) {   // nothing drew to the screen yet
+                setRenderTarget(NULL);
+                ensurePass();
+            }
+            if (!finishCapture(true)) return false;
         }
+        flushAndWait();
+        // One copy out of mapped memory, which the console doesn't cache.
+        rgba.resize((size_t)bytes);
+        memcpy(&rgba[0], readback.map, (size_t)bytes);
+        for (size_t i = 0; i < (size_t)w * h; ++i) {   // BGRA -> RGBA
+            u8 b = rgba[i * 4 + 0];
+            rgba[i * 4 + 0] = rgba[i * 4 + 2];
+            rgba[i * 4 + 2] = b;
+            if (!headless) rgba[i * 4 + 3] = 255;   // as the TV shows it
+        }
+        return true;
+    }
+
+    virtual bool captureNextFrame() {
+        if (headless) return false;
+        captureWanted = true;
+        return true;
+    }
+
+    virtual bool setGpuProfile(double seconds) {
+        if (seconds <= 0) {
+            gpuEvery = 0;
+            return true;
+        }
+        if (tickNs <= 0) return false;
+        if (!queryPool) {
+            VkQueryPoolCreateInfo qi;
+            memset(&qi, 0, sizeof(qi));
+            qi.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+            qi.queryType = VK_QUERY_TYPE_TIMESTAMP;
+            qi.queryCount = kFrames * kFrameStamps;
+            if (!vkOk(vkCreateQueryPool(dev, &qi, NULL, &queryPool), "vkCreateQueryPool")) return false;
+        }
+        gpuEvery = seconds;
+        gpuLast = plat::getTime();
+        plat::log("[gpu] timing one frame every %.0f s", seconds);
         return true;
     }
 
@@ -550,6 +626,19 @@ private:
     u32 maskBits;
     int interval;
     u32 lastQueueVblank;
+    // Screenshots on a display (captureNextFrame): the frame draws the screen
+    // into captureTex, which is read back, then drawn to the swapchain image.
+    VkTex* captureTex;
+    bool captureWanted, captureFrame;
+    // GPU timing (setGpuProfile): one frame every gpuEvery seconds takes a
+    // time stamp after each draw, pass begin and pass end, read back once its
+    // fence signals; the CPU's waits are summed for the same log.
+    VkQueryPool queryPool;
+    float tickNs;
+    double gpuEvery, gpuLast;
+    bool profiling;
+    double cpuFence, cpuAcquire, cpuSubmit, cpuPresent;
+    int cpuFrames;
 
     // ------------------------------------------------------------ helpers
     bool createInstance() {
@@ -915,13 +1004,92 @@ private:
     void beginFrame() {
         if (frameStarted) return;
         Frame& f = frames[frame];
+        double t0 = gpuEvery > 0 ? plat::getTime() : 0.0;
         vkWaitForFences(dev, 1, &f.fence, VK_TRUE, ~(u64)0);
+        if (gpuEvery > 0) cpuFence += plat::getTime() - t0;
         vkResetFences(dev, 1, &f.fence);
         releaseGarbage(f);
+        if (!f.stamps.empty()) logGpuFrame(f);
         vertexUsed = uniformUsed = stagingUsed = 0;
         ++serial;
         beginCommands();
         frameStarted = true;
+        if (gpuEvery > 0 && plat::getTime() - gpuLast >= gpuEvery) {
+            gpuLast = plat::getTime();
+            profiling = true;
+            vkCmdResetQueryPool(f.cmd, queryPool, (u32)frame * kFrameStamps, kFrameStamps);
+            stamp("start of frame");
+        }
+    }
+
+    // A time stamp once the GPU has done everything before it.
+    void stamp(const std::string& what) {
+        Frame& f = frames[frame];
+        if (!profiling || f.stamps.size() >= kFrameStamps) return;
+        vkCmdWriteTimestamp(f.cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, queryPool,
+                            (u32)frame * kFrameStamps + (u32)f.stamps.size());
+        f.stamps.push_back(what);
+    }
+
+    std::string targetName(const VkTex* t) const {
+        if (!t || t == offscreen || t == captureTex || t->swapchainImage) return "screen";
+        char buf[32];
+        int n = 0, v[2] = {t->width, t->height};
+        const char* head = "canvas ";
+        while (*head) buf[n++] = *head++;
+        for (int k = 0; k < 2; ++k) {
+            char d[12];
+            int m = 0, x = v[k];
+            do {
+                d[m++] = (char)('0' + x % 10);
+                x /= 10;
+            } while (x > 0 && m < 11);
+            while (m > 0) buf[n++] = d[--m];
+            if (k == 0) buf[n++] = 'x';
+        }
+        return std::string(buf, n);
+    }
+
+    // The profiled frame's time between stamps, summed by what each ends,
+    // longest first; then the CPU's waits per frame since the last log.
+    void logGpuFrame(Frame& f) {
+        u32 n = (u32)f.stamps.size();
+        std::vector<u64> ts(n);
+        VkResult r = vkGetQueryPoolResults(dev, queryPool, (u32)frame * kFrameStamps, n, n * sizeof(u64), &ts[0],
+                                           sizeof(u64), VK_QUERY_RESULT_64_BIT);
+        if (r == VK_SUCCESS && n >= 2) {
+            std::map<std::string, std::pair<double, int> > by;
+            std::map<std::string, double> longest;
+            for (u32 i = 1; i < n; ++i) {
+                double ms = ts[i] >= ts[i - 1] ? (double)(ts[i] - ts[i - 1]) * tickNs / 1e6 : 0.0;
+                std::pair<double, int>& e = by[f.stamps[i]];
+                e.first += ms;
+                ++e.second;
+                if (ms > longest[f.stamps[i]]) longest[f.stamps[i]] = ms;
+            }
+            std::vector<std::pair<double, std::string> > order;
+            for (std::map<std::string, std::pair<double, int> >::iterator it = by.begin(); it != by.end(); ++it)
+                order.push_back(std::make_pair(it->second.first, it->first));
+            std::sort(order.begin(), order.end());
+            plat::log("[gpu] one frame: %.2f ms on the GPU, %u time stamps (each waits for the GPU)",
+                      (double)(ts[n - 1] - ts[0]) * tickNs / 1e6, n);
+            for (size_t i = order.size(), shown = 0; i-- > 0 && shown < 24; ++shown) {
+                const std::pair<double, int>& e = by[order[i].second];
+                plat::log("[gpu] %8.2f ms %4d x  %s (longest %.2f ms)", e.first, e.second, order[i].second.c_str(),
+                          longest[order[i].second]);
+            }
+        } else {
+            plat::log("[gpu] time stamps not read (%d)", (int)r);
+        }
+        f.stamps.clear();
+        if (cpuFrames > 0) {
+            plat::log("[gpu] CPU per frame over %d frames: fence wait %.2f ms, image wait %.2f ms, submit %.2f ms, "
+                      "pacing and present %.2f ms",
+                      cpuFrames, cpuFence * 1000 / cpuFrames, cpuAcquire * 1000 / cpuFrames,
+                      cpuSubmit * 1000 / cpuFrames, cpuPresent * 1000 / cpuFrames);
+            cpuFence = cpuAcquire = cpuSubmit = cpuPresent = 0;
+            cpuFrames = 0;
+        }
     }
 
     void beginCommands() {
@@ -1045,10 +1213,21 @@ private:
 
     VkTex* backbuffer() {
         if (headless) return offscreen;
+        if (captureWanted && !acquired && !captureFrame) {
+            captureWanted = false;
+            if (!captureTex) captureTex = makeCaptureTarget();
+            if (captureTex) {
+                captureFrame = true;
+                captureTex->layout = VK_IMAGE_LAYOUT_UNDEFINED;
+            }
+        }
+        if (captureFrame) return captureTex;
         if (!acquired) {
             beginFrame();
             Frame& f = frames[frame];
+            double t0 = gpuEvery > 0 ? plat::getTime() : 0.0;
             VkResult r = vkAcquireNextImageKHR(dev, swapchain, ~(u64)0, f.acquired, VK_NULL_HANDLE, &imageIndex);
+            if (gpuEvery > 0) cpuAcquire += plat::getTime() - t0;
             if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) {
                 vkOk(r, "vkAcquireNextImageKHR");
                 return NULL;
@@ -1069,8 +1248,8 @@ private:
                                   : t->layout == VK_IMAGE_LAYOUT_UNDEFINED ? VK_ATTACHMENT_LOAD_OP_DONT_CARE
                                                                            : VK_ATTACHMENT_LOAD_OP_LOAD;
         VkImageLayout final = target ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-                              : headless ? VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
-                                         : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+                              : headless || t == captureTex ? VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+                                                            : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
         VkRenderPass rp = renderPass(load, t->layout, final);
         VkClearValue cv;
         memcpy(cv.color.float32, clearColor, sizeof(clearColor));
@@ -1095,14 +1274,74 @@ private:
         vkCmdSetScissor(cmd, 0, 1, &sc);
         boundPipeline = VK_NULL_HANDLE;
         boundSet = VK_NULL_HANDLE;
+        if (profiling) {
+            const char* how = load == VK_ATTACHMENT_LOAD_OP_CLEAR ? "clear"
+                              : load == VK_ATTACHMENT_LOAD_OP_LOAD ? "load (drawn back)"
+                                                                   : "begin";
+            stamp(std::string("pass ") + how + " " + targetName(t));
+        }
     }
 
     void endPass() {
         if (!passOpen && pendingClear) ensurePass();   // a clear nothing drew over
         if (!passOpen) return;
         vkCmdEndRenderPass(frames[frame].cmd);
+        if (profiling) stamp("pass end (resolved) " + targetName(passTex));
         passOpen = false;
         passTex = NULL;
+    }
+
+    // ---------------------------------------------------------- screenshots
+    VkTex* makeCaptureTarget() {
+        VkTex* t = new VkTex;
+        t->width = w;
+        t->height = h;
+        t->renderTarget = true;
+        VkImageUsageFlags usage =
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        if (!makeImage(t, kTargetFormat, usage) || !makeFramebuffer(t)) {
+            delete t;
+            return NULL;
+        }
+        t->minFilter = t->magFilter = FILTER_NEAREST;
+        return t;
+    }
+
+    void copyToReadback(VkTex* t) {
+        VkBufferImageCopy region;
+        memset(&region, 0, sizeof(region));
+        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.layerCount = 1;
+        region.imageExtent.width = (u32)w;
+        region.imageExtent.height = (u32)h;
+        region.imageExtent.depth = 1;
+        vkCmdCopyImageToBuffer(frames[frame].cmd, t->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buf, 1,
+                               &region);
+    }
+
+    // Ends a capture frame's screen pass: copies the image out (copy), then
+    // draws it to the swapchain image so the frame still shows.
+    bool finishCapture(bool copy) {
+        if (!captureFrame) return false;
+        setRenderTarget(NULL);
+        if (captureTex->layout == VK_IMAGE_LAYOUT_UNDEFINED || pendingClear) ensurePass();   // not drawn to yet
+        endPass();
+        if (copy) copyToReadback(captureTex);
+        barrier(captureTex, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        captureFrame = false;
+        bool scissor = scissorOn;
+        u32 mask = maskBits;
+        scissorOn = false;
+        maskBits = 15;
+        float fw = (float)w, fh = (float)h;
+        Vertex q[6] = {{0, 0, 0, 0, 1, 1, 1, 1},   {fw, 0, 1, 0, 1, 1, 1, 1},  {fw, fh, 1, 1, 1, 1, 1, 1},
+                       {0, 0, 0, 0, 1, 1, 1, 1},   {fw, fh, 1, 1, 1, 1, 1, 1}, {0, fh, 0, 1, 1, 1, 1, 1}};
+        pendingClear = false;
+        drawTriangles(q, 6, captureTex, NULL, BLEND_REPLACE);
+        endPass();
+        scissorOn = scissor;
+        maskBits = mask;
+        return true;
     }
 
     VkRect2D currentScissor() const {
@@ -1259,7 +1498,7 @@ private:
     bool buildModules(VkShaderObj* s, const std::string& source, const LoveShaderInfo& info, std::string& err) {
         std::vector<std::string> warnings;
         std::string vsrc = buildVulkanGLSLStage(source, info, true, &warnings);
-        std::string fsrc = buildVulkanGLSLStage(source, info, false, &warnings);
+        std::string fsrc = buildVulkanGLSLStage(source, info, false, &warnings, &s->loops);
         for (size_t i = 0; i < warnings.size(); ++i) plat::log("[vk] shader warning: %s", warnings[i].c_str());
         std::vector<u32> vcode, fcode;
         bool ok = spirv(true, vsrc, vcode, err);
@@ -1276,6 +1515,8 @@ private:
             return false;
         }
         vulkanUniformLayout(info, s->offsets, s->blockBytes);
+        s->loopAt = s->blockBytes;
+        s->blockBytes = vulkanLoopBlockBytes(s->blockBytes, (int)s->loops.size());
         if (s->blockBytes > (int)kUniformRange) {
             err += "uniforms too large\n";
             return false;
@@ -1436,6 +1677,7 @@ private:
         float builtins[20] = {2.0f / tw, 0, 0, 0,  0, 2.0f / th, 0, 0,  0, 0, 1, 0,  -1, -1, 0, 1,
                               (float)tw, (float)th, 1.0f, 0.0f};
         memcpy(&s->block[0], builtins, sizeof(builtins));
+        s->putLoopCounts();
         VkDeviceSize offset = (VkDeviceSize)frame * kUniformRing + uniformUsed;
         gpuCopy(uniformRing.map + offset, &s->block[0], s->block.size());
         uniformUsed += need;

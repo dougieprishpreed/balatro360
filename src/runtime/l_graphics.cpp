@@ -216,6 +216,9 @@ int g_canvasSwitchesLast = 0;
 int g_vertices = 0;
 int g_verticesLast = 0;
 FramePacer g_pacer;
+// A screenshot asked for but not taken yet: the backend may only read the
+// frame after it was told (captureNextFrame).
+std::string g_pendingShot;
 
 // Render target currently bound on the device.
 Canvas* g_appliedCanvas = NULL;
@@ -1085,18 +1088,27 @@ int w_newQuad(lua_State* L) {
 }
 
 int w_newShader(lua_State* L) {
-    std::string src;
+    std::string src, name;
     for (int i = 1; i <= 2 && !lua_isnoneornil(L, i); ++i) {
         std::string arg = luax_checkstring(L, i);
         std::string fileData;
         bool looksLikeCode = arg.find('\n') != std::string::npos || arg.find(';') != std::string::npos;
-        if (!looksLikeCode && fs::read(arg, fileData)) src += fileData;
-        else src += arg;
+        if (!looksLikeCode && fs::read(arg, fileData)) {
+            src += fileData;
+            if (name.empty()) {
+                size_t slash = arg.find_last_of('/');
+                name = arg.substr(slash == std::string::npos ? 0 : slash + 1);
+                name = name.substr(0, name.find('.'));
+            }
+        } else {
+            src += arg;
+        }
         src += "\n";
     }
     std::string err;
     gfx::Shader* sh = g_dev->createShader(src, err);
     if (!sh) return luaL_error(L, "Cannot compile shader:\n%s", err.c_str());
+    sh->name = name.empty() ? "inline" : name;
     ShaderObject* s = new ShaderObject;
     s->sh = sh;
     luax_pushobject(L, "Shader", s);
@@ -1255,13 +1267,17 @@ int w_present(lua_State* L) {
     (void)L;
     flush();
     std::string shot;
-    if (plat::screenshotRequested(shot)) {
+    if (plat::screenshotRequested(shot)) g_pendingShot = shot;
+    if (!g_pendingShot.empty()) {
         std::vector<u8> rgba;
         if (g_dev->readBackbuffer(rgba)) {
-            if (stbi_write_png(shot.c_str(), g_dev->width(), g_dev->height(), 4, &rgba[0], g_dev->width() * 4))
-                plat::log("[graphics] screenshot written to %s", shot.c_str());
+            if (stbi_write_png(g_pendingShot.c_str(), g_dev->width(), g_dev->height(), 4, &rgba[0], g_dev->width() * 4))
+                plat::log("[graphics] screenshot written to %s", g_pendingShot.c_str());
             else
-                plat::log("[graphics] failed to write %s", shot.c_str());
+                plat::log("[graphics] failed to write %s", g_pendingShot.c_str());
+            g_pendingShot.clear();
+        } else if (!g_dev->captureNextFrame()) {
+            g_pendingShot.clear();
         }
     }
     g_pacer.beforePresent(g_dev);
@@ -1771,6 +1787,13 @@ int w_startProfiler(lua_State* L) {
     return 0;
 }
 
+// Extension: love.graphics._b360_gpuProfile(seconds): the GPU time of each
+// draw of one frame every so often, in the log. False if the renderer can't.
+int w_gpuProfile(lua_State* L) {
+    lua_pushboolean(L, g_dev->setGpuProfile(luaL_optnumber(L, 1, 10.0)));
+    return 1;
+}
+
 // Extension: vblanks per frame (1 or 2), recent CPU ms per frame.
 int w_getFrameInfo(lua_State* L) {
     lua_pushinteger(L, g_pacer.interval());
@@ -1849,7 +1872,8 @@ const luaL_Reg kFuncs[] = {
     {"getSystemLimits", w_getSystemLimits}, {"getCanvasFormats", w_trueTable},
     {"getImageFormats", w_trueTable}, {"getTextureTypes", w_trueTable}, {"captureScreenshot", w_none},
     {"_b360_setSafeArea", w_setSafeArea}, {"_b360_setFrameRate", w_setFrameRate},
-    {"_b360_getFrameInfo", w_getFrameInfo}, {"_b360_startProfiler", w_startProfiler}, {"setStencilTest", w_none}, {"stencil", w_none}, {"flushBatch", w_none}, {"discard", w_none},
+    {"_b360_getFrameInfo", w_getFrameInfo}, {"_b360_startProfiler", w_startProfiler},
+    {"_b360_gpuProfile", w_gpuProfile}, {"setStencilTest", w_none}, {"stencil", w_none}, {"flushBatch", w_none}, {"discard", w_none},
     {NULL, NULL}};
 
 }  // namespace

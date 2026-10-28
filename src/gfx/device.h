@@ -4,7 +4,8 @@
 // all transforms, batching and state tracking on the CPU and hands the
 // backend plain triangle lists. Backends:
 //   src/gfx/gl/    OpenGL 2.1 (OSMesa) for the Linux host build
-//   src/gfx/d3d9/  Direct3D 9 for the Xbox 360
+//   src/gfx/d3d9/  Direct3D 9 for the Xbox 360 (XDK build)
+//   src/gfx/vulkan/ Vulkan on vulkan4xenon for the Xbox 360 (xSDK build)
 //
 // Coordinate conventions shared by all backends:
 //   * Vertex positions are in pixels, origin top-left, y down, already
@@ -76,6 +77,8 @@ protected:
 class Shader {
 public:
     virtual ~Shader() {}
+    // The file it came from without folder or extension ("CRT"), for logs.
+    std::string name;
     // Uniforms declared by the shader source (parsed by the core).
     std::vector<UniformInfo> uniforms;
     // index refers to uniforms[]. values holds the elements one after the
@@ -124,8 +127,15 @@ public:
     // paces frames itself.
     virtual bool setPresentInterval(int vblanks) { (void)vblanks; return false; }
 
-    // Read back the current back buffer as RGBA8 (for host screenshots).
+    // Read back the current back buffer as RGBA8 (for screenshots). A
+    // backend that can't read the frame it drew may still read the next one:
+    // captureNextFrame() says so, and readBackbuffer() works for that frame.
     virtual bool readBackbuffer(std::vector<u8>& rgba) { (void)rgba; return false; }
+    virtual bool captureNextFrame() { return false; }
+
+    // Log the GPU time of each draw of one frame every this many seconds
+    // (0 = off), for testing on hardware. False if the backend can't.
+    virtual bool setGpuProfile(double seconds) { (void)seconds; return false; }
 
     virtual const char* rendererName() const = 0;
 };

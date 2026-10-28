@@ -528,6 +528,39 @@ std::string intText(int v) {
     return r;
 }
 
+// A float in 6 significant digits ("1e-05", "0.5" as "5e-1"), for comments.
+std::string floatText(float f) {
+    std::string r;
+    double v = f;
+    if (v < 0) {
+        r += "-";
+        v = -v;
+    }
+    int e = 0;
+    if (v > 0) {
+        while (v >= 10) {
+            v /= 10;
+            ++e;
+        }
+        while (v < 1) {
+            v *= 10;
+            --e;
+        }
+    }
+    int digits = (int)(v * 100000 + 0.5);
+    if (digits >= 1000000) {
+        digits /= 10;
+        ++e;
+    }
+    std::string m = intText(digits);
+    size_t end = m.size();
+    while (end > 1 && m[end - 1] == '0') --end;
+    r += m.substr(0, 1);
+    if (end > 1) r += "." + m.substr(1, end - 1);
+    if (e) r += std::string("e") + (e < 0 ? "-" : "") + intText(e < 0 ? -e : e);
+    return r;
+}
+
 std::string vkMemberName(const std::string& name) { return isVkReserved(name) ? name + "_" : name; }
 
 // GLSL type name of a uniform as declared.
@@ -567,11 +600,13 @@ public:
     VkTranslator(const std::vector<Token>& t, const LoveShaderInfo& i, bool vertex, std::vector<std::string>* w)
         : toks(t), info(i), warnings(w), vertexStage(vertex), voidFunc(false), usesAtan2(false) {
         markUniformDecls();
+        collectIntDefines();
         markConstLocals();
         if (!vertexStage) markInnerLoops();
     }
 
     bool needsAtan2() const { return usesAtan2; }
+    const std::vector<VkHardwareLoop>& hardwareLoops() const { return hwLoops; }
 
     std::string run() {
         std::string out;
@@ -616,6 +651,8 @@ private:
     std::vector<std::string>* warnings;
     std::vector<bool> removed;   // tokens of uniform declarations (they move into the block)
     std::map<size_t, std::string> insertBefore;   // text emitted before token i
+    std::map<std::string, int> knownInts;   // int #defines and int locals that never change
+    std::vector<VkHardwareLoop> hwLoops;
     bool vertexStage;
     std::string retType;
     bool voidFunc;
@@ -627,9 +664,12 @@ private:
 
     // xost unrolls loops with constant counts, and a nest of them can need
     // more than the 64 registers a pixel shader has (CRT's 7x7 bloom took 67,
-    // the hologram's 9x9 glow 175). A loop whose count is data, a for up to
-    // int() of an interpolant, is a hardware loop instead, so the innermost
-    // loop of each nest gets "+ int(VaryingTexCoord.z)", which is always 0.
+    // the hologram's 9x9 glow 175). The innermost loop of each nest becomes
+    // a hardware loop instead, counted by an int in the uniform block, the
+    // one shape xost counts exactly: "for (int i = s; i < b.n; ++i)". (A
+    // loop whose count is data runs a fixed 255 passes on the console.) The
+    // backend sets the int to the loop's count, or to its start while a
+    // uniform if around it fails, as xost runs a loop's if for every pixel.
     void markInnerLoops() {
         std::vector<VkLoop> loops;
         size_t n = toks.size();
@@ -702,19 +742,198 @@ private:
                 if (loops[b].start > loops[a].start && loops[b].start < loops[a].bodyEnd) hasInner = true;
             }
             if (!nested || hasInner) continue;
-            // "i REL bound" alone; anything else stays as it is.
-            size_t rel = n;
-            bool simple = true;
-            for (size_t k = loops[a].condSemi1 + 1; k < loops[a].condSemi2; ++k) {
-                const std::string& s = toks[k].text;
-                if (s == "&" || s == "|" || s == "?" || s == "!") simple = false;
-                if (rel == n && (s == "<" || s == ">")) rel = k;
-            }
-            if (!simple || rel == n) continue;
-            size_t after = rel + 1;
-            if (after < n && toks[after].text == "=") ++after;
-            insertBefore[after] += "(";
-            insertBefore[loops[a].condSemi2] += ") + int(VaryingTexCoord.z)";
+            // "for (int i = s; i < n; ++i)" with s and n worked out here;
+            // anything else stays as it is.
+            VkHardwareLoop hl;
+            std::string var;
+            if (!loopShape(loops[a], var, hl.start, hl.count)) continue;
+            if (hl.count - hl.start > 255) continue;   // a loop constant counts to 255
+            guardsFor(loops[a].start, hl.guards);
+            for (size_t k = loops[a].condSemi1 + 1; k < loops[a].condSemi2; ++k) removed[k] = true;
+            insertBefore[loops[a].condSemi2] += " " + var + " < b360_loop" + intText((int)hwLoops.size());
+            hwLoops.push_back(hl);
+        }
+    }
+
+    // A loop "for (int i = START; i < BOUND; ++i)" (or <=, i++, i += 1)
+    // whose bounds evalInt works out and whose body leaves i alone.
+    bool loopShape(const VkLoop& l, std::string& var, int& start, int& count) const {
+        size_t n = toks.size();
+        size_t open = nextSig(toks, l.start + 1, n);
+        size_t close = matchParen(toks, open, n);
+        size_t ty = nextSig(toks, open + 1, n);
+        if (ty >= l.condSemi1 || toks[ty].text != "int") return false;
+        size_t v = nextSig(toks, ty + 1, n);
+        size_t eq = nextSig(toks, v + 1, n);
+        if (eq >= l.condSemi1 || toks[v].kind != TK_IDENT || toks[eq].text != "=") return false;
+        var = toks[v].text;
+        if (!evalInt(eq + 1, l.condSemi1, start)) return false;
+        size_t cv = nextSig(toks, l.condSemi1 + 1, n);
+        size_t rel = nextSig(toks, cv + 1, n);
+        if (rel >= l.condSemi2 || toks[cv].text != var || toks[rel].text != "<") return false;
+        size_t from = rel + 1;
+        bool le = from < l.condSemi2 && toks[from].text == "=";
+        if (le) ++from;
+        int bound;
+        if (!evalInt(from, l.condSemi2, bound)) return false;
+        count = le ? bound + 1 : bound;
+        std::vector<std::string> inc;
+        for (size_t k = l.condSemi2 + 1; k < close; ++k)
+            if (!isTrivia(toks[k])) inc.push_back(toks[k].text);
+        bool step1 = (inc.size() == 3 && ((inc[0] == "+" && inc[1] == "+" && inc[2] == var) ||
+                                          (inc[0] == var && inc[1] == "+" && inc[2] == "+"))) ||
+                     (inc.size() == 4 && inc[0] == var && inc[1] == "+" && inc[2] == "=" && inc[3] == "1");
+        return step1 && !assignedIn(var, close + 1, l.bodyEnd);
+    }
+
+    // The uniform comparisons of the ifs whose then-arm holds the token at
+    // at. An if adds its condition's terms when every one is "u > 0.5" or
+    // the like and they're joined by && alone, and nothing otherwise, which
+    // only costs the loop's passes where the if fails.
+    void guardsFor(size_t at, std::vector<VkLoopGuard>& guards) const {
+        size_t n = toks.size();
+        for (size_t i = 0; i < at; ++i) {
+            if (toks[i].kind != TK_IDENT || toks[i].preproc || toks[i].text != "if" || prevSigIsDot(i)) continue;
+            size_t open = nextSig(toks, i + 1, n);
+            if (open >= n || toks[open].text != "(") continue;
+            size_t close = matchParen(toks, open, n);
+            size_t body = nextSig(toks, close + 1, n);
+            if (body >= n || body > at) continue;
+            size_t end;
+            if (toks[body].text == "{") end = matchBrace(body, n);
+            else if (body == at) end = at + 1;
+            else continue;
+            if (at >= end) continue;
+            std::vector<VkLoopGuard> terms;
+            if (conditionGuards(open + 1, close, terms)) guards.insert(guards.end(), terms.begin(), terms.end());
+        }
+    }
+
+    bool conditionGuards(size_t b, size_t e, std::vector<VkLoopGuard>& terms) const {
+        std::vector<size_t> t;
+        for (size_t k = b; k < e; ++k)
+            if (!isTrivia(toks[k])) t.push_back(k);
+        size_t from = 0;
+        for (size_t k = 0; k <= t.size(); ++k) {
+            bool split = k + 1 < t.size() && toks[t[k]].text == "&" && toks[t[k + 1]].text == "&";
+            if (k < t.size() && !split) continue;
+            VkLoopGuard g;
+            if (!guardTerm(t, from, k, g)) return false;
+            terms.push_back(g);
+            from = k + 2;
+            ++k;
+        }
+        return !terms.empty();
+    }
+
+    // t[b, e): "u > 0.5", "0.5 < u", "u >= -1." and the like, u a float uniform.
+    bool guardTerm(const std::vector<size_t>& t, size_t b, size_t e, VkLoopGuard& g) const {
+        while (e - b >= 2 && toks[t[b]].text == "(" && toks[t[e - 1]].text == ")") {
+            ++b;
+            --e;
+        }
+        std::vector<std::string> s;
+        for (size_t k = b; k < e; ++k) s.push_back(toks[t[k]].text);
+        size_t c = 1;
+        if (s.size() < 3 || (s[c] != "<" && s[c] != ">")) return false;
+        bool orEqual = s[c + 1] == "=";
+        size_t rhs = c + (orEqual ? 2 : 1);
+        bool uniformLeft = toks[t[b]].kind == TK_IDENT;
+        std::string name = uniformLeft ? s[0] : s.back();
+        std::string num;
+        if (uniformLeft) {
+            for (size_t k = rhs; k < s.size(); ++k) num += s[k];
+        } else {
+            if (rhs + 1 != s.size()) return false;
+            num = s[0];
+        }
+        const UniformInfo* u = findUniform(name);
+        if (!u || u->type != UNIFORM_FLOAT || u->components != 1 || u->arraySize != 1) return false;
+        if (!uniformLeft && toks[t[e - 1]].kind != TK_IDENT) return false;
+        char* stop = NULL;
+        double v = strtod(num.c_str(), &stop);
+        if (num.empty() || !stop || *stop) return false;
+        bool greater = (s[c] == ">") == uniformLeft;
+        g.uniform = (int)(u - &info.uniforms[0]);
+        g.op = greater ? (orEqual ? VkLoopGuard::GE : VkLoopGuard::GT) : (orEqual ? VkLoopGuard::LE : VkLoopGuard::LT);
+        g.value = (float)v;
+        return true;
+    }
+
+    // An int expression of literals, known ints, + - *, and parentheses.
+    bool evalInt(size_t b, size_t e, int& v) const {
+        std::vector<size_t> t;
+        for (size_t k = b; k < e; ++k)
+            if (!isTrivia(toks[k])) t.push_back(k);
+        size_t pos = 0;
+        return evalSum(t, pos, v) && pos == t.size();
+    }
+
+    bool evalSum(const std::vector<size_t>& t, size_t& pos, int& v) const {
+        if (!evalProduct(t, pos, v)) return false;
+        while (pos < t.size() && (toks[t[pos]].text == "+" || toks[t[pos]].text == "-")) {
+            bool minus = toks[t[pos++]].text == "-";
+            int r;
+            if (!evalProduct(t, pos, r)) return false;
+            v = minus ? v - r : v + r;
+        }
+        return true;
+    }
+
+    bool evalProduct(const std::vector<size_t>& t, size_t& pos, int& v) const {
+        if (!evalUnary(t, pos, v)) return false;
+        while (pos < t.size() && toks[t[pos]].text == "*") {
+            ++pos;
+            int r;
+            if (!evalUnary(t, pos, r)) return false;
+            v *= r;
+        }
+        return true;
+    }
+
+    bool evalUnary(const std::vector<size_t>& t, size_t& pos, int& v) const {
+        if (pos >= t.size()) return false;
+        const Token& k = toks[t[pos++]];
+        if (k.text == "-" || k.text == "+") {
+            if (!evalUnary(t, pos, v)) return false;
+            if (k.text == "-") v = -v;
+            return true;
+        }
+        if (k.text == "(") {
+            if (!evalSum(t, pos, v) || pos >= t.size() || toks[t[pos]].text != ")") return false;
+            ++pos;
+            return true;
+        }
+        if (k.kind == TK_NUMBER) return parseInt(k.text, v);
+        if (k.kind != TK_IDENT) return false;
+        std::map<std::string, int>::const_iterator it = knownInts.find(k.text);
+        if (it == knownInts.end()) return false;
+        v = it->second;
+        return true;
+    }
+
+    static bool parseInt(const std::string& s, int& v) {
+        if (s.empty() || s.size() > 9) return false;
+        v = 0;
+        for (size_t i = 0; i < s.size(); ++i) {
+            if (s[i] < '0' || s[i] > '9') return false;
+            v = v * 10 + (s[i] - '0');
+        }
+        return true;
+    }
+
+    // "#define NAME 3" lines, for loop bounds.
+    void collectIntDefines() {
+        size_t n = toks.size();
+        for (size_t i = 0; i < n; ++i) {
+            if (!toks[i].preproc || toks[i].kind != TK_IDENT || toks[i].text != "define") continue;
+            size_t name = nextSig(toks, i + 1, n);
+            if (name >= n || !toks[name].preproc || toks[name].kind != TK_IDENT) continue;
+            std::vector<size_t> rest;
+            for (size_t k = name + 1; k < n && toks[k].preproc; ++k)
+                if (!isTrivia(toks[k])) rest.push_back(k);
+            int v;
+            if (rest.size() == 1 && parseInt(toks[rest[0]].text, v)) knownInts[toks[name].text] = v;
         }
     }
 
@@ -737,7 +956,7 @@ private:
             while (prev > 0 && isTrivia(toks[prev - 1])) --prev;
             if (prev == 0) continue;
             const std::string& p = toks[prev - 1].text;
-            if (p != "{" && p != ";" && p != "}") continue;
+            if (p != "{" && p != ";" && p != "}" && p != "const") continue;
             size_t name = nextSig(toks, i + 1, n);
             size_t eq = nextSig(toks, name + 1, n);
             size_t num = nextSig(toks, eq + 1, n);
@@ -745,12 +964,17 @@ private:
             if (semi >= n || toks[name].kind != TK_IDENT || toks[eq].text != "=" || toks[num].kind != TK_NUMBER ||
                 toks[semi].text != ";")
                 continue;
-            if (!assignedAfter(toks[name].text, semi)) insertBefore[i] += "const ";
+            if (p != "const" && assignedAfter(toks[name].text, semi)) continue;
+            if (p != "const") insertBefore[i] += "const ";
+            int v;
+            if (parseInt(toks[num].text, v)) knownInts[toks[name].text] = v;
         }
     }
 
-    bool assignedAfter(const std::string& name, size_t from) const {
-        size_t n = toks.size();
+    bool assignedAfter(const std::string& name, size_t from) const { return assignedIn(name, from, toks.size()); }
+
+    bool assignedIn(const std::string& name, size_t from, size_t to) const {
+        size_t n = to < toks.size() ? to : toks.size();
         for (size_t k = from; k < n; ++k) {
             if (toks[k].kind != TK_IDENT || toks[k].text != name || prevSigIsDot(k)) continue;
             size_t a = nextSig(toks, k + 1, n);
@@ -886,6 +1110,12 @@ private:
                 // xost has no atan2 (GLSL.std.450 Atan2).
                 usesAtan2 = true;
                 out += "b360_atan2";
+                continue;
+            }
+            if (call && (t.text == "sin" || t.text == "cos" || t.text == "tan")) {
+                // xost's sin and cos are the bare hardware ops, right only
+                // from -pi to pi (the prelude's b360_wrap).
+                out += "b360_" + t.text;
                 continue;
             }
             if (!call && isVkReserved(t.text)) {
@@ -1093,6 +1323,8 @@ private:
 
 }  // namespace
 
+int vulkanLoopBlockBytes(int blockBytes, int loops) { return (blockBytes + 4 * loops + 15) & ~15; }
+
 void vulkanUniformLayout(const LoveShaderInfo& info, std::vector<int>& offsets, int& blockBytes) {
     offsets.assign(info.uniforms.size(), -1);
     int at = VK_BUILTIN_UNIFORM_BYTES;
@@ -1120,7 +1352,7 @@ void vulkanUniformLayout(const LoveShaderInfo& info, std::vector<int>& offsets, 
 }
 
 std::string buildVulkanGLSLStage(const std::string& src, const LoveShaderInfo& info, bool vertexStage,
-                                 std::vector<std::string>* warnings) {
+                                 std::vector<std::string>* warnings, std::vector<VkHardwareLoop>* loops) {
     std::string full = src;
     full += "\n";
     if (vertexStage && !info.hasPosition) full += kDefaultPosition;
@@ -1130,6 +1362,8 @@ std::string buildVulkanGLSLStage(const std::string& src, const LoveShaderInfo& i
     tokenize(full, toks);
     VkTranslator tr(toks, info, vertexStage, warnings);
     std::string body = tr.run();
+    const std::vector<VkHardwareLoop>& hw = tr.hardwareLoops();
+    if (loops) *loops = hw;
 
     std::vector<int> offsets;
     int blockBytes = 0;
@@ -1141,6 +1375,11 @@ std::string buildVulkanGLSLStage(const std::string& src, const LoveShaderInfo& i
     s += "#define lowp\n#define mediump\n#define highp\n";
     s += "#define number float\n#define Image sampler2D\n#define Texel love_Texel\n";
     s += vertexStage ? "#define love_Texel(s, uv) textureLod(s, uv, 0.0)\n" : "#define love_Texel(s, uv) texture(s, uv)\n";
+    // The angle moved into -pi..pi, where the console's sin and cos are right.
+    s += "#define b360_wrap(x) ((fract((x) * 0.15915494309 + 0.5) - 0.5) * 6.28318530718)\n"
+         "#define b360_sin(x) sin(b360_wrap(x))\n"
+         "#define b360_cos(x) cos(b360_wrap(x))\n"
+         "#define b360_tan(x) tan(b360_wrap(x))\n";
     s += "layout(std140, set = 0, binding = 0) uniform LoveUniforms {\n"
          "    layout(offset = 0) mat4 TransformProjectionMatrix;\n"
          "    layout(offset = 64) vec4 love_ScreenSize;\n";
@@ -1157,7 +1396,18 @@ std::string buildVulkanGLSLStage(const std::string& src, const LoveShaderInfo& i
         if (u.arraySize > 1) s += "[" + intText(u.arraySize) + "]";
         s += ";\n";
     }
+    for (size_t k = 0; k < hw.size(); ++k)
+        s += "    layout(offset = " + intText(blockBytes + 4 * (int)k) + ") int b360_loop" + intText((int)k) + ";\n";
     s += "};\n";
+    for (size_t k = 0; k < hw.size(); ++k) {
+        static const char* ops[] = {">", ">=", "<", "<="};
+        const VkHardwareLoop& l = hw[k];
+        s += "// b360_loop" + intText((int)k) + ": " + intText(l.count - l.start) + " passes";
+        for (size_t g = 0; g < l.guards.size(); ++g)
+            s += std::string(g ? " &&" : ", none unless") + " " + info.uniforms[l.guards[g].uniform].name + " " +
+                 ops[l.guards[g].op] + " " + floatText(l.guards[g].value);
+        s += "\n";
+    }
     if (vertexStage) {
         s += "layout(location = 0) in vec2 love_VertexPos;\n"
              "layout(location = 1) in vec4 love_VertexColor;\n"
