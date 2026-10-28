@@ -37,6 +37,23 @@ std::string buildGLSLStage(const std::string& src, const LoveShaderInfo& info, b
 std::string buildHLSLStage(const std::string& src, const LoveShaderInfo& info, bool vertexStage,
                            std::vector<std::string>* warnings);
 
+// Complete Vulkan GLSL 4.50 source for one stage, for glslang -V (Vulkan
+// backend). Interface:
+//   set 0, binding 0: std140 uniform block LoveUniforms, at a dynamic offset:
+//                     mat4 TransformProjectionMatrix, vec4 love_ScreenSize,
+//                     then the shader's uniforms (vulkanUniformLayout)
+//   set 0, binding 1: sampler2D love_MainTex
+//   vertex inputs:    location 0 vec2 position, 1 vec4 colour, 2 vec2 texcoord
+// Functions with early returns are rewritten to return once, as xost (the
+// console's shader compiler) inlines only those.
+std::string buildVulkanGLSLStage(const std::string& src, const LoveShaderInfo& info, bool vertexStage,
+                                 std::vector<std::string>* warnings);
+
+// std140 byte offset of each of info.uniforms in LoveUniforms (-1 for
+// samplers), and the block's size. bools and ints are stored as floats.
+enum { VK_BUILTIN_UNIFORM_BYTES = 80 };
+void vulkanUniformLayout(const LoveShaderInfo& info, std::vector<int>& offsets, int& blockBytes);
+
 }  // namespace gfx
 
 #endif

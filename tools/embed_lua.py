@@ -33,9 +33,10 @@ def main():
         out.append("")
     out.append("#endif")
     new = "\n".join(out) + "\n"
-    old = open(OUT).read() if os.path.exists(OUT) else None
+    # LF on every OS, so running this on Windows doesn't rewrite every line.
+    old = open(OUT, newline="").read() if os.path.exists(OUT) else None
     if new != old:
-        open(OUT, "w").write(new)
+        open(OUT, "w", newline="\n").write(new)
         print("wrote", os.path.relpath(OUT, ROOT))
     if len(sys.argv) > 1 and sys.argv[1] == "--check" and new != old:
         sys.exit("embedded_lua.h was out of date")

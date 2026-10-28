@@ -1,6 +1,7 @@
 # build output
 out/
 build/xbox360/*/
+build-xsdk/
 *.user
 *.suo
 *.sdf

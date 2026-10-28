@@ -1,8 +1,10 @@
 # Host (Linux) build of the Balatro360 runtime, used for development and
-# automated testing. The Xbox 360 build uses build/xbox360/*.vcxproj instead.
+# automated testing. The Xbox 360 builds use build/xsdk (xSDK) or
+# build/xbox360/*.vcxproj (Microsoft XDK) instead.
 #
 #   make                 offscreen OpenGL build (needs libosmesa6-dev)  -> out/host/b360
 #   make GFX=null        no rendering                                   -> out/host-null/b360
+#   make GFX=vulkan      the console's Vulkan renderer, offscreen       -> out/host-vulkan/b360
 #   make ppc             big-endian PowerPC build, run under qemu-ppc   -> out/ppc/b360
 #   make LUA=luajit      link the system LuaJIT instead of PUC Lua 5.1  -> out/host-luajit/b360
 #
@@ -12,7 +14,7 @@
 GFX ?= gl
 LUA ?= puc
 CROSS ?=
-OUT ?= out/host$(if $(filter null,$(GFX)),-null,)$(if $(filter luajit,$(LUA)),-luajit,)
+OUT ?= out/host$(if $(filter-out gl,$(GFX)),-$(GFX),)$(if $(filter luajit,$(LUA)),-luajit,)
 
 CXX := $(CROSS)g++
 CC := $(CROSS)gcc
@@ -47,6 +49,19 @@ RUNTIME_SRC := $(wildcard src/runtime/*.cpp) src/gfx/shader_translate.cpp src/th
 ifeq ($(GFX),gl)
 RUNTIME_SRC += src/gfx/gl/device_gl.cpp
 LIBS := -lOSMesa -lpthread -lm
+else ifeq ($(GFX),vulkan)
+# The console's renderer (vulkan4xenon there), offscreen on any Vulkan driver
+# (Mesa's lavapipe will do), with glslang-xenon built for the host:
+#   make GFX=vulkan GLSLANG_SRC=/path/to/glslang-xenon GLSLANG_BUILD=/path/to/its/build
+RUNTIME_SRC += src/gfx/vulkan/device_vk.cpp
+GLSLANG_SRC ?= build-xsdk/deps/glslang-xenon
+GLSLANG_BUILD ?= build-xsdk/deps/glslang-host
+GLSLANG_LIBS := $(GLSLANG_BUILD)/glslang/libglslang.a $(GLSLANG_BUILD)/glslang/libMachineIndependent.a \
+	$(GLSLANG_BUILD)/glslang/libGenericCodeGen.a $(GLSLANG_BUILD)/glslang/OSDependent/Unix/libOSDependent.a \
+	$(GLSLANG_BUILD)/glslang/libglslang-default-resource-limits.a \
+	$(wildcard $(GLSLANG_BUILD)/External/spirv-tools/source/opt/libSPIRV-Tools-opt.a \
+	$(GLSLANG_BUILD)/External/spirv-tools/source/libSPIRV-Tools.a)
+LIBS := $(GLSLANG_LIBS) -lvulkan -lpthread -lm
 else
 RUNTIME_SRC += src/gfx/null/device_null.cpp
 LIBS := -lpthread -lm
@@ -54,6 +69,9 @@ endif
 
 OBJS := $(patsubst %.c,$(OUT)/%.o,$(MINIZ_SRC)) \
 	$(patsubst %.cpp,$(OUT)/%.o,$(RUNTIME_SRC))
+ifeq ($(GFX),vulkan)
+OBJS += $(OUT)/src/gfx/vulkan/glsl_spirv.o
+endif
 ifneq ($(LUA),luajit)
 OBJS += $(patsubst %.c,$(OUT)/%.o,$(LUA_SRC)) $(OUT)/third_party/luabitop/bit.o
 endif
@@ -83,6 +101,11 @@ $(OUT)/third_party/luabitop/bit.o: third_party/luabitop/bit.c
 $(OUT)/third_party/miniz/%.o: third_party/miniz/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+# glslang's C++ API needs C++17; glsl_spirv.h keeps the rest C++98.
+$(OUT)/src/gfx/vulkan/glsl_spirv.o: src/gfx/vulkan/glsl_spirv.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(filter-out -std=c++98,$(CXXFLAGS)) -std=c++17 -I$(GLSLANG_SRC) -c $< -o $@
 
 $(OUT)/src/third_party_impl.o: src/third_party_impl.cpp
 	@mkdir -p $(dir $@)

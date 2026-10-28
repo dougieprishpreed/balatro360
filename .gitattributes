@@ -1,2 +1,3 @@
 src/common/build_id.h export-subst
 *.bat -text
+*.sh text eol=lf

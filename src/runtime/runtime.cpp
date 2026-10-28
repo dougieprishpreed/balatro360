@@ -56,7 +56,7 @@ void openStandardLibs(lua_State* L) {
     }
     lua_pushcfunction(L, luaPrint);
     lua_setglobal(L, "print");
-#if defined(B360_LUAJIT) && !defined(_XBOX)
+#if defined(B360_LUAJIT) && !defined(_XBOX) && !defined(__XSDK__)
     // The 360 build of LuaJIT is interpreter-only. Mirror that on the host
     // unless B360_JIT=1, so performance numbers are comparable.
     const char* jitEnv = getenv("B360_JIT");

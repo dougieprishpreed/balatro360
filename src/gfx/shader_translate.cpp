@@ -1,6 +1,7 @@
 #include "shader_translate.h"
 
 #include <ctype.h>
+#include <map>
 #include <stdlib.h>
 #include <string.h>
 
@@ -499,7 +500,707 @@ const char* kHlslPrelude =
     "#define glsl_mod(x, y) ((x) - (y) * floor((x) / (y)))\n"
     "uniform float4 love_ScreenSize;\n";
 
+// ------------------------------------------------------- Vulkan GLSL emit
+// Identifiers that are legal in LÖVE's GLSL but keywords, types or reserved
+// words in Vulkan GLSL 4.50. They get a trailing '_' unless called.
+const char* kVkReserved[] = {
+    "texture", "sampler", "sample", "buffer", "shared", "coherent", "volatile", "restrict", "readonly",
+    "writeonly", "layout", "centroid", "flat", "smooth", "noperspective", "patch", "subroutine", "common",
+    "partition", "active", "filter", "resource", "input", "output", "image", "texture1D", "texture2D",
+    "texture3D", "textureCube", "subpassInput", "precise", "superp", "demote", NULL};
+
+bool isVkReserved(const std::string& s) {
+    for (int i = 0; kVkReserved[i]; ++i)
+        if (s == kVkReserved[i]) return true;
+    return false;
+}
+
+// Decimal text of a non-negative int (no sprintf: the XDK build compiles this file too).
+std::string intText(int v) {
+    char buf[16];
+    int n = 0;
+    do {
+        buf[n++] = (char)('0' + v % 10);
+        v /= 10;
+    } while (v > 0 && n < 15);
+    std::string r;
+    while (n > 0) r += buf[--n];
+    return r;
+}
+
+std::string vkMemberName(const std::string& name) { return isVkReserved(name) ? name + "_" : name; }
+
+// GLSL type name of a uniform as declared.
+std::string glslTypeName(const UniformInfo& u) {
+    static const char* f[] = {"", "float", "vec2", "vec3", "vec4"};
+    static const char* i[] = {"", "int", "ivec2", "ivec3", "ivec4"};
+    static const char* b[] = {"", "bool", "bvec2", "bvec3", "bvec4"};
+    static const char* m[] = {"", "", "mat2", "mat3", "mat4"};
+    int c = u.components < 1 ? 1 : (u.components > 4 ? 4 : u.components);
+    switch (u.type) {
+    case UNIFORM_INT: return i[c];
+    case UNIFORM_BOOL: return b[c];
+    case UNIFORM_MAT: return c < 2 ? "mat2" : m[c];
+    case UNIFORM_SAMPLER: return "sampler2D";
+    default: return f[c];
+    }
+}
+
+// A statement of a function body, for rewriting early returns.
+struct VkStmt {
+    enum Kind { SIMPLE, EMPTY, PREPROC, BLOCK, IF, LOOP, DO, RETURN };
+    Kind kind;
+    size_t b, e;     // the whole statement, [b, e)
+    size_t xb, xe;   // IF/LOOP/DO: inside the parentheses; RETURN: the expression
+    bool hasElse;
+    std::vector<VkStmt> kids;   // BLOCK: statements; IF: then [, else]; LOOP/DO: body
+    VkStmt() : kind(SIMPLE), b(0), e(0), xb(0), xe(0), hasElse(false) {}
+};
+
+// A for loop: where it starts, where its body ends, and the ';'s around its condition.
+struct VkLoop {
+    size_t start, bodyEnd, condSemi1, condSemi2;
+};
+
+class VkTranslator {
+public:
+    VkTranslator(const std::vector<Token>& t, const LoveShaderInfo& i, bool vertex, std::vector<std::string>* w)
+        : toks(t), info(i), warnings(w), vertexStage(vertex), voidFunc(false), usesAtan2(false) {
+        markUniformDecls();
+        markConstLocals();
+        if (!vertexStage) markInnerLoops();
+    }
+
+    bool needsAtan2() const { return usesAtan2; }
+
+    std::string run() {
+        std::string out;
+        size_t n = toks.size(), cursor = 0;
+        int depth = 0;
+        for (size_t i = 0; i < n; ++i) {
+            const Token& t = toks[i];
+            if (t.preproc || isTrivia(t)) continue;
+            if (t.kind == TK_PUNCT) {
+                if (t.text == "{") ++depth;
+                else if (t.text == "}") --depth;
+                continue;
+            }
+            if (depth != 0 || t.kind != TK_IDENT || removed[i]) continue;
+            if (!findType(t.text) && t.text != "void") continue;
+            // TYPE NAME ( ... ) { ... }
+            size_t name = nextSig(toks, i + 1, n);
+            if (name >= n || toks[name].kind != TK_IDENT) continue;
+            size_t open = nextSig(toks, name + 1, n);
+            if (open >= n || toks[open].text != "(") continue;
+            size_t close = matchParen(toks, open, n);
+            size_t brace = nextSig(toks, close + 1, n);
+            if (brace >= n || toks[brace].text != "{") continue;
+            size_t end = matchBrace(brace, n);
+            if (end >= n) break;
+            if (needsRewrite(brace, end)) {
+                emitRange(cursor, brace, out);
+                retType = t.text;
+                voidFunc = t.text == "void";
+                emitBody(brace, end, out);
+                cursor = end + 1;
+            }
+            i = end;
+        }
+        emitRange(cursor, n, out);
+        return out;
+    }
+
+private:
+    const std::vector<Token>& toks;
+    const LoveShaderInfo& info;
+    std::vector<std::string>* warnings;
+    std::vector<bool> removed;   // tokens of uniform declarations (they move into the block)
+    std::map<size_t, std::string> insertBefore;   // text emitted before token i
+    bool vertexStage;
+    std::string retType;
+    bool voidFunc;
+    bool usesAtan2;
+
+    void warn(const std::string& s) {
+        if (warnings) warnings->push_back(s);
+    }
+
+    // xost unrolls loops with constant counts, and a nest of them can need
+    // more than the 64 registers a pixel shader has (CRT's 7x7 bloom took 67,
+    // the hologram's 9x9 glow 175). A loop whose count is data, a for up to
+    // int() of an interpolant, is a hardware loop instead, so the innermost
+    // loop of each nest gets "+ int(VaryingTexCoord.z)", which is always 0.
+    void markInnerLoops() {
+        std::vector<VkLoop> loops;
+        size_t n = toks.size();
+        for (size_t i = 0; i < n; ++i) {
+            if (toks[i].kind != TK_IDENT || toks[i].preproc || toks[i].text != "for") continue;
+            size_t open = nextSig(toks, i + 1, n);
+            if (open >= n || toks[open].text != "(") continue;
+            size_t close = matchParen(toks, open, n);
+            if (close >= n) continue;
+            VkLoop l;
+            l.start = i;
+            l.condSemi1 = l.condSemi2 = n;
+            int depth = 0;
+            for (size_t k = open + 1; k < close; ++k) {
+                if (toks[k].kind != TK_PUNCT) continue;
+                char c = toks[k].text[0];
+                if (c == '(' || c == '[') ++depth;
+                else if (c == ')' || c == ']') --depth;
+                else if (c == ';' && depth == 0) {
+                    if (l.condSemi1 == n) l.condSemi1 = k;
+                    else l.condSemi2 = k;
+                }
+            }
+            if (l.condSemi2 == n) continue;
+            size_t body = nextSig(toks, close + 1, n);
+            if (body >= n) continue;
+            if (toks[body].text == "{") {
+                int d = 0;
+                size_t k = body;
+                for (; k < n; ++k) {
+                    if (toks[k].kind != TK_PUNCT || toks[k].preproc) continue;
+                    if (toks[k].text == "{") ++d;
+                    else if (toks[k].text == "}" && --d == 0) break;
+                }
+                l.bodyEnd = k;
+            } else {
+                // A single statement: possibly another loop, whose body ends it.
+                l.bodyEnd = n;   // fixed below
+            }
+            loops.push_back(l);
+        }
+        // Bodies without braces end where the statement they hold ends.
+        for (size_t a = loops.size(); a-- > 0;) {
+            if (loops[a].bodyEnd != n) continue;
+            size_t open = nextSig(toks, loops[a].start + 1, n);
+            size_t body = nextSig(toks, matchParen(toks, open, n) + 1, n);
+            size_t end = n;
+            for (size_t b = a + 1; b < loops.size(); ++b)
+                if (loops[b].start == body) end = loops[b].bodyEnd;
+            if (end == n) {
+                int d = 0;
+                for (size_t k = body; k < n; ++k) {
+                    if (toks[k].kind != TK_PUNCT) continue;
+                    char c = toks[k].text[0];
+                    if (c == '(' || c == '[' || c == '{') ++d;
+                    else if (c == ')' || c == ']' || c == '}') --d;
+                    else if (c == ';' && d == 0) {
+                        end = k;
+                        break;
+                    }
+                }
+            }
+            loops[a].bodyEnd = end;
+        }
+        for (size_t a = 0; a < loops.size(); ++a) {
+            bool nested = false, hasInner = false;
+            for (size_t b = 0; b < loops.size(); ++b) {
+                if (a == b) continue;
+                if (loops[a].start > loops[b].start && loops[a].start < loops[b].bodyEnd) nested = true;
+                if (loops[b].start > loops[a].start && loops[b].start < loops[a].bodyEnd) hasInner = true;
+            }
+            if (!nested || hasInner) continue;
+            // "i REL bound" alone; anything else stays as it is.
+            size_t rel = n;
+            bool simple = true;
+            for (size_t k = loops[a].condSemi1 + 1; k < loops[a].condSemi2; ++k) {
+                const std::string& s = toks[k].text;
+                if (s == "&" || s == "|" || s == "?" || s == "!") simple = false;
+                if (rel == n && (s == "<" || s == ">")) rel = k;
+            }
+            if (!simple || rel == n) continue;
+            size_t after = rel + 1;
+            if (after < n && toks[after].text == "=") ++after;
+            insertBefore[after] += "(";
+            insertBefore[loops[a].condSemi2] += ") + int(VaryingTexCoord.z)";
+        }
+    }
+
+    // "int n = 4;" in a function, never assigned again, becomes const, so
+    // glslang folds it: xost has no integer negate for a loop from -n, and
+    // unrolls a loop only with constant bounds.
+    void markConstLocals() {
+        size_t n = toks.size();
+        int depth = 0;
+        for (size_t i = 0; i < n; ++i) {
+            const Token& t = toks[i];
+            if (t.preproc || isTrivia(t)) continue;
+            if (t.kind == TK_PUNCT) {
+                if (t.text == "{") ++depth;
+                else if (t.text == "}") --depth;
+                continue;
+            }
+            if (depth == 0 || t.text != "int") continue;
+            size_t prev = i;
+            while (prev > 0 && isTrivia(toks[prev - 1])) --prev;
+            if (prev == 0) continue;
+            const std::string& p = toks[prev - 1].text;
+            if (p != "{" && p != ";" && p != "}") continue;
+            size_t name = nextSig(toks, i + 1, n);
+            size_t eq = nextSig(toks, name + 1, n);
+            size_t num = nextSig(toks, eq + 1, n);
+            size_t semi = nextSig(toks, num + 1, n);
+            if (semi >= n || toks[name].kind != TK_IDENT || toks[eq].text != "=" || toks[num].kind != TK_NUMBER ||
+                toks[semi].text != ";")
+                continue;
+            if (!assignedAfter(toks[name].text, semi)) insertBefore[i] += "const ";
+        }
+    }
+
+    bool assignedAfter(const std::string& name, size_t from) const {
+        size_t n = toks.size();
+        for (size_t k = from; k < n; ++k) {
+            if (toks[k].kind != TK_IDENT || toks[k].text != name || prevSigIsDot(k)) continue;
+            size_t a = nextSig(toks, k + 1, n);
+            size_t b = a < n ? a + 1 : n;
+            if (a < n && toks[a].text == "=" && !(b < n && toks[b].text == "=")) return true;
+            if (a < n && b < n && toks[b].text == "=" &&
+                (toks[a].text == "+" || toks[a].text == "-" || toks[a].text == "*" || toks[a].text == "/"))
+                return true;
+            if (a < n && b < n && toks[a].text == toks[b].text && (toks[a].text == "+" || toks[a].text == "-"))
+                return true;
+            if (k >= 2 && toks[k - 1].text == toks[k - 2].text && (toks[k - 1].text == "+" || toks[k - 1].text == "-"))
+                return true;
+        }
+        return false;
+    }
+
+    // Whether the call whose '(' is at open has two arguments.
+    bool twoArgs(size_t open) const {
+        size_t close = matchParen(toks, open, toks.size());
+        int depth = 0, commas = 0;
+        for (size_t k = open + 1; k < close; ++k) {
+            if (toks[k].kind != TK_PUNCT) continue;
+            char c = toks[k].text[0];
+            if (c == '(' || c == '[') ++depth;
+            else if (c == ')' || c == ']') --depth;
+            else if (c == ',' && depth == 0) ++commas;
+        }
+        return commas == 1;
+    }
+
+    void markUniformDecls() {
+        removed.assign(toks.size(), false);
+        int d = 0;
+        for (size_t i = 0; i < toks.size(); ++i) {
+            const Token& t = toks[i];
+            if (t.kind == TK_PUNCT && t.text == "{") ++d;
+            else if (t.kind == TK_PUNCT && t.text == "}") --d;
+            if (d != 0 || t.preproc || t.kind != TK_IDENT) continue;
+            if (t.text != "extern" && t.text != "uniform") continue;
+            size_t j = i;
+            for (; j < toks.size() && toks[j].text != ";"; ++j) removed[j] = true;
+            if (j < toks.size()) removed[j] = true;
+            i = j;
+        }
+    }
+
+    size_t matchBrace(size_t open, size_t end) const {
+        int depth = 0;
+        for (size_t i = open; i < end; ++i) {
+            if (toks[i].kind != TK_PUNCT || toks[i].preproc) continue;
+            if (toks[i].text == "{") ++depth;
+            else if (toks[i].text == "}" && --depth == 0) return i;
+        }
+        return end;
+    }
+
+    // The ';' ending a simple statement at i (nesting aside), or end.
+    size_t findSemicolon(size_t i, size_t end) const {
+        int depth = 0;
+        for (; i < end; ++i) {
+            const Token& t = toks[i];
+            if (t.kind != TK_PUNCT || t.preproc) continue;
+            char c = t.text[0];
+            if (c == '(' || c == '[' || c == '{') ++depth;
+            else if (c == ')' || c == ']' || c == '}') --depth;
+            else if (c == ';' && depth <= 0) return i;
+        }
+        return end;
+    }
+
+    const UniformInfo* findUniform(const std::string& name) const {
+        for (size_t i = 0; i < info.uniforms.size(); ++i)
+            if (info.uniforms[i].name == name) return &info.uniforms[i];
+        return NULL;
+    }
+
+    bool prevSigIsDot(size_t i) const {
+        while (i > 0) {
+            --i;
+            if (!isTrivia(toks[i])) return toks[i].text == ".";
+        }
+        return false;
+    }
+
+    void emitRange(size_t b, size_t e, std::string& out) {
+        for (size_t i = b; i < e && i < toks.size(); ++i) {
+            const Token& t = toks[i];
+            if (!insertBefore.empty()) {
+                std::map<size_t, std::string>::const_iterator ins = insertBefore.find(i);
+                if (ins != insertBefore.end()) out += ins->second;
+            }
+            if (removed[i]) {
+                if (t.text == "\n") out += "\n";   // keeps line numbers
+                continue;
+            }
+            if (t.kind != TK_IDENT || t.preproc || prevSigIsDot(i)) {
+                out += t.text;
+                continue;
+            }
+            size_t j = nextSig(toks, i + 1, toks.size());
+            bool call = j < toks.size() && toks[j].text == "(";
+            if (t.text == "precision") {
+                // GLSL ES "precision highp float;" statements: drop.
+                while (i < e && toks[i].text != ";") ++i;
+                continue;
+            }
+            if (call && (t.text == "Texel" || t.text == "texture2D")) {
+                out += "love_Texel";
+                continue;
+            }
+            const UniformInfo* u = findUniform(t.text);
+            if (u && u->type == UNIFORM_SAMPLER) {
+                warn("extra texture '" + t.text + "' samples the main texture");
+                out += "love_MainTex";
+                continue;
+            }
+            if (u && u->type == UNIFORM_BOOL && u->arraySize == 1) {
+                // Not bool(x): that is x != 0.0, an unordered compare xost lacks.
+                if (u->components == 1) {
+                    out += "(b360u_" + u->name + " > 0.5)";
+                } else {
+                    static const char* v[] = {"", "", "vec2", "vec3", "vec4"};
+                    out += "greaterThan(b360u_" + u->name + ", " + v[u->components > 4 ? 4 : u->components] +
+                           "(0.5))";
+                }
+                continue;
+            }
+            if (u && u->type == UNIFORM_INT && u->arraySize == 1) {
+                out += glslTypeName(*u) + "(b360u_" + u->name + ")";
+                continue;
+            }
+            if (call && t.text == "atan" && twoArgs(j)) {
+                // xost has no atan2 (GLSL.std.450 Atan2).
+                usesAtan2 = true;
+                out += "b360_atan2";
+                continue;
+            }
+            if (!call && isVkReserved(t.text)) {
+                out += t.text + "_";
+                continue;
+            }
+            if (t.text == "gl_FragColor" || t.text == "love_PixelColor")
+                warn("shader writes " + t.text + " directly; unsupported");
+            out += t.text;
+        }
+    }
+
+    // -- early returns
+    VkStmt parseStmt(size_t i, size_t end) {
+        VkStmt s;
+        s.b = i;
+        s.xb = s.xe = i;
+        const Token& t = toks[i];
+        if (t.preproc) {
+            size_t j = i;
+            while (j < end && toks[j].preproc) ++j;
+            s.kind = VkStmt::PREPROC;
+            s.e = j;
+            return s;
+        }
+        if (t.text == ";") {
+            s.kind = VkStmt::EMPTY;
+            s.e = i + 1;
+            return s;
+        }
+        if (t.text == "{") {
+            size_t close = matchBrace(i, end);
+            s.kind = VkStmt::BLOCK;
+            parseList(i + 1, close, s.kids);
+            s.e = close < end ? close + 1 : end;
+            return s;
+        }
+        if (t.text == "if" || t.text == "for" || t.text == "while") {
+            size_t open = nextSig(toks, i + 1, end);
+            size_t close = matchParen(toks, open, end);
+            s.xb = open + 1;
+            s.xe = close;
+            size_t body = nextSig(toks, close + 1, end);
+            if (close >= end || body >= end) {
+                s.kind = VkStmt::SIMPLE;
+                s.e = end;
+                return s;
+            }
+            s.kids.push_back(parseStmt(body, end));
+            s.e = s.kids[0].e;
+            s.kind = t.text == "if" ? VkStmt::IF : VkStmt::LOOP;
+            if (s.kind == VkStmt::IF) {
+                size_t j = nextSig(toks, s.e, end);
+                if (j < end && toks[j].text == "else") {
+                    size_t k = nextSig(toks, j + 1, end);
+                    if (k < end) {
+                        s.kids.push_back(parseStmt(k, end));
+                        s.hasElse = true;
+                        s.e = s.kids[1].e;
+                    }
+                }
+            }
+            return s;
+        }
+        if (t.text == "do") {
+            size_t body = nextSig(toks, i + 1, end);
+            s.kids.push_back(parseStmt(body, end));
+            size_t w = nextSig(toks, s.kids[0].e, end);
+            size_t open = nextSig(toks, w + 1, end);
+            size_t close = matchParen(toks, open, end);
+            size_t semi = nextSig(toks, close + 1, end);
+            s.kind = VkStmt::DO;
+            s.xb = open + 1;
+            s.xe = close;
+            s.e = semi < end ? semi + 1 : end;
+            return s;
+        }
+        size_t semi = findSemicolon(i, end);
+        s.kind = t.text == "return" ? VkStmt::RETURN : VkStmt::SIMPLE;
+        if (s.kind == VkStmt::RETURN) {
+            s.xb = i + 1;
+            s.xe = semi;
+        }
+        s.e = semi < end ? semi + 1 : end;
+        return s;
+    }
+
+    void parseList(size_t b, size_t e, std::vector<VkStmt>& out) {
+        size_t i = nextSig(toks, b, e);
+        while (i < e) {
+            out.push_back(parseStmt(i, e));
+            size_t next = out.back().e;
+            if (next <= i) break;
+            i = nextSig(toks, next, e);
+        }
+    }
+
+    static int countReturns(const VkStmt& s) {
+        int n = s.kind == VkStmt::RETURN ? 1 : 0;
+        for (size_t i = 0; i < s.kids.size(); ++i) n += countReturns(s.kids[i]);
+        return n;
+    }
+
+    // A function needs rewriting unless its only return ends its body.
+    bool needsRewrite(size_t brace, size_t end) {
+        std::vector<VkStmt> body;
+        parseList(brace + 1, end, body);
+        int total = 0;
+        for (size_t i = 0; i < body.size(); ++i) total += countReturns(body[i]);
+        if (total == 0) return false;
+        size_t last = body.size();
+        while (last > 0 && (body[last - 1].kind == VkStmt::PREPROC || body[last - 1].kind == VkStmt::EMPTY)) --last;
+        return !(total == 1 && last > 0 && body[last - 1].kind == VkStmt::RETURN);
+    }
+
+    void emitBody(size_t brace, size_t end, std::string& out) {
+        std::vector<VkStmt> body;
+        parseList(brace + 1, end, body);
+        out += "{\n";
+        if (!voidFunc) out += retType + " b360_ret;\n";
+        out += "bool b360_done = false;\n";
+        emitList(body, 0, out, false);
+        if (!voidFunc) out += "return b360_ret;\n";
+        out += "}";
+    }
+
+    // After a statement that may return, the rest of the list runs only if
+    // it didn't.
+    void emitList(const std::vector<VkStmt>& list, size_t from, std::string& out, bool inLoop) {
+        for (size_t k = from; k < list.size(); ++k) {
+            emitStmt(list[k], out, inLoop);
+            if (k + 1 < list.size() && countReturns(list[k]) > 0) {
+                if (inLoop) out += "if (b360_done) break;\n";
+                out += "if (!b360_done) {\n";
+                emitList(list, k + 1, out, inLoop);
+                out += "}\n";
+                return;
+            }
+        }
+    }
+
+    void emitBlock(const VkStmt& s, std::string& out, bool inLoop) {
+        if (s.kind == VkStmt::BLOCK) {
+            emitStmt(s, out, inLoop);
+            return;
+        }
+        out += "{\n";
+        emitStmt(s, out, inLoop);
+        out += "}\n";
+    }
+
+    void emitLoopBody(const VkStmt& body, std::string& out) {
+        out += "{\n";
+        if (body.kind == VkStmt::BLOCK) emitList(body.kids, 0, out, true);
+        else emitStmt(body, out, true);
+        if (countReturns(body) > 0) out += "if (b360_done) break;\n";
+        out += "}\n";
+    }
+
+    void emitStmt(const VkStmt& s, std::string& out, bool inLoop) {
+        switch (s.kind) {
+        case VkStmt::RETURN:
+            if (voidFunc) {
+                out += "{ b360_done = true; }\n";
+            } else {
+                out += "{ b360_ret = ";
+                emitRange(s.xb, s.xe, out);
+                out += "; b360_done = true; }\n";
+            }
+            break;
+        case VkStmt::IF:
+            out += "if (";
+            emitRange(s.xb, s.xe, out);
+            out += ") ";
+            emitBlock(s.kids[0], out, inLoop);
+            if (s.hasElse) {
+                out += "else ";
+                emitBlock(s.kids[1], out, inLoop);
+            }
+            break;
+        case VkStmt::BLOCK:
+            out += "{\n";
+            emitList(s.kids, 0, out, inLoop);
+            out += "}\n";
+            break;
+        case VkStmt::LOOP:
+            emitRange(s.b, s.xe + 1, out);
+            out += " ";
+            emitLoopBody(s.kids[0], out);
+            break;
+        case VkStmt::DO:
+            out += "do ";
+            emitLoopBody(s.kids[0], out);
+            out += "while (";
+            emitRange(s.xb, s.xe, out);
+            out += ");\n";
+            break;
+        default:
+            emitRange(s.b, s.e, out);
+            out += "\n";
+            break;
+        }
+    }
+};
+
 }  // namespace
+
+void vulkanUniformLayout(const LoveShaderInfo& info, std::vector<int>& offsets, int& blockBytes) {
+    offsets.assign(info.uniforms.size(), -1);
+    int at = VK_BUILTIN_UNIFORM_BYTES;
+    for (size_t i = 0; i < info.uniforms.size(); ++i) {
+        const UniformInfo& u = info.uniforms[i];
+        if (u.type == UNIFORM_SAMPLER) continue;
+        int n = u.arraySize < 1 ? 1 : u.arraySize;
+        int size, align;
+        if (u.type == UNIFORM_MAT) {
+            // std140: a column per vec4.
+            size = 16 * u.components * n;
+            align = 16;
+        } else if (n > 1) {
+            size = 16 * n;   // std140 array stride
+            align = 16;
+        } else {
+            size = 4 * u.components;
+            align = u.components == 1 ? 4 : (u.components == 2 ? 8 : 16);
+        }
+        at = (at + align - 1) & ~(align - 1);
+        offsets[i] = at;
+        at += size;
+    }
+    blockBytes = (at + 15) & ~15;
+}
+
+std::string buildVulkanGLSLStage(const std::string& src, const LoveShaderInfo& info, bool vertexStage,
+                                 std::vector<std::string>* warnings) {
+    std::string full = src;
+    full += "\n";
+    if (vertexStage && !info.hasPosition) full += kDefaultPosition;
+    if (!vertexStage && !info.hasEffect) full += kDefaultEffect;
+
+    std::vector<Token> toks;
+    tokenize(full, toks);
+    VkTranslator tr(toks, info, vertexStage, warnings);
+    std::string body = tr.run();
+
+    std::vector<int> offsets;
+    int blockBytes = 0;
+    vulkanUniformLayout(info, offsets, blockBytes);
+
+    std::string s;
+    s += "#version 450\n";
+    s += vertexStage ? "#define VERTEX 1\n" : "#define PIXEL 1\n";
+    s += "#define lowp\n#define mediump\n#define highp\n";
+    s += "#define number float\n#define Image sampler2D\n#define Texel love_Texel\n";
+    s += vertexStage ? "#define love_Texel(s, uv) textureLod(s, uv, 0.0)\n" : "#define love_Texel(s, uv) texture(s, uv)\n";
+    s += "layout(std140, set = 0, binding = 0) uniform LoveUniforms {\n"
+         "    layout(offset = 0) mat4 TransformProjectionMatrix;\n"
+         "    layout(offset = 64) vec4 love_ScreenSize;\n";
+    for (size_t i = 0; i < info.uniforms.size(); ++i) {
+        const UniformInfo& u = info.uniforms[i];
+        if (offsets[i] < 0) continue;
+        std::string type = glslTypeName(u), name = vkMemberName(u.name);
+        if (u.type == UNIFORM_BOOL || u.type == UNIFORM_INT) {
+            static const char* f[] = {"", "float", "vec2", "vec3", "vec4"};
+            type = f[u.components < 1 ? 1 : (u.components > 4 ? 4 : u.components)];
+            if (u.arraySize == 1) name = "b360u_" + u.name;
+        }
+        s += "    layout(offset = " + intText(offsets[i]) + ") " + type + " " + name;
+        if (u.arraySize > 1) s += "[" + intText(u.arraySize) + "]";
+        s += ";\n";
+    }
+    s += "};\n";
+    if (vertexStage) {
+        s += "layout(location = 0) in vec2 love_VertexPos;\n"
+             "layout(location = 1) in vec4 love_VertexColor;\n"
+             "layout(location = 2) in vec2 love_VertexTexCoord;\n"
+             "layout(location = 0) out vec4 VaryingTexCoord;\n"
+             "layout(location = 1) out vec4 VaryingColor;\n";
+    } else {
+        s += "layout(location = 0) in vec4 VaryingTexCoord;\n"
+             "layout(location = 1) in vec4 VaryingColor;\n"
+             "layout(set = 0, binding = 1) uniform sampler2D love_MainTex;\n"
+             "layout(location = 0) out vec4 love_FragOut;\n";
+    }
+    if (tr.needsAtan2()) {
+        // atan(y, x) from a polynomial for atan on [0, 1] (error below 1e-5),
+        // as xost has no atan2 and its atan is only good from -1 to 1.
+        s += "float b360_atan2(float y, float x) {\n"
+             "    float ax = abs(x), ay = abs(y);\n"
+             "    float a = min(ax, ay) / max(max(ax, ay), 1e-20);\n"
+             "    float q = a * a;\n"
+             "    float r = ((((0.0208351 * q - 0.0851330) * q + 0.1801410) * q - 0.3302995) * q + 0.9998660) * a;\n"
+             "    r = ay > ax ? 1.5707963268 - r : r;\n"
+             "    r = x < 0.0 ? 3.1415926536 - r : r;\n"
+             "    return y < 0.0 ? -r : r;\n"
+             "}\n";
+    }
+    s += "#line 1\n";
+    s += body;
+    s += "\n";
+    if (vertexStage) {
+        s += "void main() {\n"
+             "    VaryingTexCoord = vec4(love_VertexTexCoord, 0.0, 1.0);\n"
+             "    VaryingColor = love_VertexColor;\n"
+             "    gl_Position = position(TransformProjectionMatrix, vec4(love_VertexPos, 0.0, 1.0));\n"
+             "}\n";
+    } else {
+        // Vulkan's gl_FragCoord is in pixels from the top left, at pixel
+        // centres: LÖVE's screen_coords.
+        s += "void main() {\n"
+             "    love_FragOut = effect(VaryingColor, love_MainTex, VaryingTexCoord.st, gl_FragCoord.xy);\n"
+             "}\n";
+    }
+    return s;
+}
 
 void analyzeLoveShader(const std::string& src, LoveShaderInfo& info) {
     std::vector<Token> toks;

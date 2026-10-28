@@ -163,12 +163,18 @@ hooks["game"] = function()
 	end
 	-- Fonts load on first use (Balatro creates one per language, 60+ MB in
 	-- total). Load the current language's font while the game is still
-	-- starting up, instead of when the main menu first shows text.
+	-- starting up, instead of when the main menu first shows text. The
+	-- main menu's profile button checks the gamertag's glyphs in the
+	-- "all1" font (GoNotoCurrent, 14.5 MB, 0.76 s from USB), so load that
+	-- one now too when the gamertag is shown.
 	if type(Game.set_language) == "function" then
 		local orig_set_language = Game.set_language
 		Game.set_language = function(self, ...)
 			local r = orig_set_language(self, ...)
 			local font = self.LANG and self.LANG.font and self.LANG.font.FONT
+			if font then pcall(font.getWidth, font, "0") end
+			local all1 = self.F_DISP_USERNAME and self.LANGUAGES and self.LANGUAGES.all1
+			font = all1 and all1.font and all1.font.FONT
 			if font then pcall(font.getWidth, font, "0") end
 			return r
 		end
