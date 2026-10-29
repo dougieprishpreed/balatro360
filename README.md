@@ -1,176 +1,103 @@
 # Balatro360
 
-An unofficial, fan-made port of [Balatro](https://www.playbalatro.com/) to the
-Xbox 360, for consoles that can run unsigned code (RGH or JTAG, or
-ABadAvatar from USB).
+Play [Balatro](https://www.playbalatro.com/) on your Xbox 360.
 
-**This repository contains no game data.** Balatro is © LocalThunk / Playstack.
-To use this project you must own the game and supply your own legally obtained
-copy of the PC version. The converter reads *your* `Balatro.exe` and copies
-its files into the console folder on your machine; nothing from the game is
-ever committed here or redistributed.
+Balatro360 is an unofficial, fan-made port for consoles that can run homebrew.
+**The game isn't included:** you need your own copy of Balatro for PC, and the
+converter in the download copies your game's files across for you.
+
+## What you need
+
+* An Xbox 360 that can run homebrew (RGH, JTAG or ABadAvatar), with a way to
+  launch `.xex` files, such as Aurora, Freestyle Dash or XeXMenu
+* Balatro for Windows from Steam
+* A Windows 10 or 11 PC (on a Mac or Linux, see [below](#on-a-mac-or-linux))
+* A USB drive or the console's hard drive, with about 100 MB free
 
 ## Install
 
-Download the latest `Balatro360-v*.zip` from
-[Releases](https://github.com/dougieprishpreed/balatro360/releases), then:
+1. Download the latest `Balatro360-v*.zip` from
+   [Releases](https://github.com/dougieprishpreed/balatro360/releases) and
+   extract it.
+2. Double-click **Convert Balatro.bat** and choose `Balatro.exe`.
+   To find it, right-click Balatro in Steam and choose
+   **Manage > Browse local files**.
+3. Copy the **Balatro360** folder to your USB drive or the console's hard
+   drive, for example to `Games\Balatro360`.
+4. On the console, launch `default.xex` from that folder.
 
-1. **Extract** the whole zip to a folder on your PC.
-2. **Run `Convert Balatro.bat`** and choose `Balatro.exe` from your Balatro
-   installation (Steam: right-click Balatro, Manage, Browse local files). It
-   copies the game's files into the `Balatro360\game` folder. It needs
-   nothing installed: it uses the PowerShell that comes with Windows 10 and
-   11. On a Mac or Linux, or by hand, see the zip's `README.txt`.
-3. **Copy** the `Balatro360` folder to a USB drive or the console's hard disk
-   and launch `default.xex` from it (Aurora, Freestyle Dash, XeXMenu, ...).
-   Keep the folder together and writable: saves and the log are written next
-   to the XEX.
+The first launch takes a little longer while the console prepares the game's
+graphics. Later launches are quicker.
 
-The first start takes longer while the console compiles the game's shaders;
-they're kept in `cache\` for later starts. After updating Balatro, run the
-converter again and delete `cache\` on the console.
+### On a Mac or Linux
 
-## Status
-
-**v1.0.0: playable on real hardware.** Menus run at 60 fps; busy scenes and
-most of a run drop to a steady 30 (the switch is automatic, see `B360_FPS`).
-In a run Balatro's own Lua logic takes about 13 ms and its drawing about 8 ms
-of CPU per frame on the 360, more than a 60 fps frame allows, and the CRT
-screen effect alone takes about 10 ms of GPU time.
-
-Seeded runs match the PC version: the random number generator is a bit-exact
-reimplementation of LuaJIT's, verified against LuaJIT on x86-64 and on
-big-endian PowerPC.
-
-## How it works
-
-Balatro is written in Lua on top of the [LÖVE](https://love2d.org) framework.
-Rather than porting LÖVE itself (SDL, OpenGL, OpenAL, LuaJIT, none of which
-exist on the 360), Balatro360 is a small, purpose-built runtime that implements
-the parts of the LÖVE 11 API the game uses. It builds with the open
-[xSDK](https://github.com/xenosworks/xsdk) toolchain and renders through
-[vulkan4xenon](https://github.com/xenosworks/vulkan4xenon):
-
-| LÖVE piece | Balatro360 replacement |
-|---|---|
-| LuaJIT 2.1 | LuaJIT 2.0's own Xbox 360 interpreter build, with a LuaJIT compatibility layer (`bit`, `jit`, LuaJIT's exact `math.random`); PUC Lua 5.1.5 as a fallback build |
-| OpenGL + GLSL shaders | Vulkan on vulkan4xenon, drawn on a render thread of its own: the game's shaders are translated to Vulkan GLSL at load time and compiled on the console (glslang, then xost), with the results cached |
-| OpenAL + libvorbis | A software mixer feeding the console's audio through xSDK; Ogg Vorbis via stb_vorbis |
-| SDL game controllers | XAM's controller input, exposed through `love.joystick` with the gamepad API |
-| PhysFS | `game:\game\` (read-only data) overlaid by `game:\save\` |
-| FreeType | stb_truetype glyph atlases |
-
-The same runtime also builds for Linux with an offscreen OpenGL or Vulkan
-backend. That build is how the port is developed and tested without a
-console: it runs the real game, scripted controller input drives it, and it
-writes screenshots (see [docs/HOST_TESTING.md](docs/HOST_TESTING.md)). Xenia
-doesn't run xSDK titles.
-
-The first versions were built with Microsoft's Xbox 360 XDK and Direct3D 9;
-that build is no longer maintained ([docs/BUILDING_XDK.md](docs/BUILDING_XDK.md),
-and the `xdk` branch has the last of it).
-
-## Building
-
-GitHub Actions builds `default.xex` and the release zip on every push to
-`main` ([.github/workflows/xsdk-build.yml](.github/workflows/xsdk-build.yml);
-artifacts `balatro360-xex` and `balatro360-release`).
-
-To build it yourself on Linux or in WSL: `tools/xsdk/bootstrap.sh` once, then
-`tools/xsdk/build.sh` ([docs/BUILDING_XSDK.md](docs/BUILDING_XSDK.md)). Then
-prepare a console folder from your own game with Python 3:
+The zip's `converter` folder also has a Python 3 script that does the same
+job:
 
 ```
-python tools/prepare_game.py "path\to\Balatro.exe" out\Balatro360 --xex build-xsdk/output/default.xex
+python3 converter/prepare_game.py /path/to/Balatro.exe Balatro360
 ```
 
-`python tools/package_release.py <artifact> --version 1.0.0` makes the
-release zip from the `balatro360-xex` artifact.
+Or open `Balatro.exe` with 7-Zip and extract everything except the `.dll`
+files into `Balatro360/game`, so that `Balatro360/game/main.lua` exists.
 
-## Controls
+## Playing
 
-Balatro's own controller support is used unchanged (A select, B back, etc.).
+* The game uses Balatro's own controller support: **A** to select, **B** to go
+  back, and so on.
+* Hold **BACK + START** for a second to quit to the dashboard.
+* Menus run at 60 fps. Busy scenes and most of a run play at a steady 30 fps.
+* Seeded runs play out the same as on PC.
 
-* **Hold BACK + START for one second** to quit to the dashboard from anywhere,
-  including error screens.
+## Saves
 
-## Configuration
+Your saves are in `Balatro360\save` on the console. They use the same format
+as the PC version, so you can copy your profiles (the `1`, `2` and `3`
+folders) between the two. On Windows, the PC saves are in `%AppData%\Balatro`.
 
-Create `game\b360_config.lua` in the console folder to change settings, for
-example:
+## Updating
+
+* **New Balatro360 version:** copy the new `Balatro360` folder over the old
+  one on the console. Your game files and saves stay where they are.
+* **New Balatro version:** run the converter again, replace the `game` folder
+  on the console with the new one, and delete the `cache` folder.
+
+## Settings
+
+Most settings are in Balatro's own options menu. For a few extras, create a
+text file called `b360_config.lua` in `Balatro360\game` on the console:
 
 ```lua
 return {
-    -- Balatro's own feature flags (F_*)
-    F_RUMBLE = 1.0,         -- controller rumble strength (0 to disable)
-    F_HIDE_BG = false,      -- keep drawing the board while paused
-
-    -- Balatro360 options (B360_*)
-    B360_FPS = "auto",      -- 60, 30 or "auto" (the default): 60 while the game
-                            -- keeps up, otherwise a steady 30
-    B360_SAFE_AREA = 0.92,  -- shrink the picture if your TV crops the edges
-    B360_HALF_RES_BACKGROUND = false, -- draw the swirling backgrounds at full
-                            -- resolution (they're blocks of two pixels anyway)
-
-    -- For testing (all off unless set)
-    B360_SHOW_FPS = true,   -- overlay: FPS, frame time, CPU time per frame
-                            -- and the current target ([60] or [30])
-    B360_LOG_PERF = true,   -- every 10 s in b360.log: frame times split into
-                            -- update / draw / present, draw calls
-    B360_PROFILE = true,    -- every 30 s in b360.log: the Lua functions the
-                            -- game spends its time in (slightly slower)
-    B360_GPU_PROFILE = true, -- every 10 s in b360.log: the GPU time of each
-                            -- shader and render pass in one frame
-    B360_SCREENSHOTS = true, -- hold BACK and press RB: the next frame is saved
-                            -- as shots\shot_0001.png and on
-    B360_INTERPOLATE = true, -- at 30 fps, show a frame halfway between each two
-                            -- (experimental: 60 a second, a frame late, and
-                            -- the console's GPU can't always keep up)
-    B360_RENDER_THREAD = false, -- draw on the game's thread
+    B360_SAFE_AREA = 0.92,  -- shrink the picture if your TV cuts off the edges
+    F_RUMBLE = 1.0,         -- controller rumble strength; 0 turns it off
+    B360_FPS = 30,          -- always 30 fps, instead of switching between 60 and 30
 }
 ```
 
-`b360.log` also notes every switch between 60 and 30 fps (`[pace]` lines).
+Keep only the lines you want.
 
-## Files on the console
+## Problems?
 
-| Path | Purpose |
-|---|---|
-| `default.xex` | the runtime |
-| `game\` | game files from your Balatro.exe (the converter or `tools/prepare_game.py`) |
-| `save\` | profiles and settings (same format as the PC version, so PC saves can be copied over) |
-| `cache\` | the shaders compiled on the first start (delete it after updating the game) |
-| `b360.log` | runtime log; please include it in bug reports |
-| `default.log` | the SDK's own log (start-up, exit, shader compiles) |
+* **The first launch is slow.** That's normal: the console is preparing the
+  graphics, and it only does this once.
+* **The edges of the picture are cut off.** Set `B360_SAFE_AREA` (see
+  [Settings](#settings)).
+* **It doesn't run in Xenia.** Balatro360 only runs on a real console.
+* **Anything else:** please
+  [open an issue](https://github.com/dougieprishpreed/balatro360/issues) and
+  attach `b360.log` and `default.log` from the `Balatro360` folder.
 
-## Repository layout
+## Credits
 
-```
-src/runtime/        LÖVE API implementation (platform independent C++)
-src/gfx/            renderer interface, GLSL->Vulkan GLSL/HLSL translator, the
-                    render thread (threaded_device), backends:
-    vulkan/         Vulkan 1.0: vulkan4xenon on the 360, any driver on Linux
-    gl/             Linux OpenGL (OSMesa, offscreen)
-    null/           no rendering (big-endian test builds)
-    d3d9/           Xbox 360 Direct3D 9 (the old XDK build)
-src/platform/       OS layer: xsdk/ (360), posix/ (Linux), xbox360/ (old XDK build)
-src/lua/            boot scripts embedded into the executable
-third_party/        Lua 5.1.5, LuaBitOp, stb, miniz (all permissively licensed)
-tools/              prepare_game.py, package_release.py; xsdk/: the xSDK build;
-                    release/: the converter and the release README
-build/xsdk/         CMake project for the xSDK build
-build/xbox360/      Visual Studio 2010 solution for the old XDK build
-docs/               build, architecture and testing notes
-```
+Balatro is made by LocalThunk and published by Playstack. Balatro360 isn't
+affiliated with or endorsed by LocalThunk, Playstack or Microsoft, and this
+repository contains none of the game's files.
 
-## Roadmap
+Balatro360 is built with the open [xSDK](https://github.com/xenosworks/xsdk)
+toolchain and [vulkan4xenon](https://github.com/xenosworks/vulkan4xenon).
+The other open-source code it uses is listed in
+[THIRD_PARTY.md](THIRD_PARTY.md).
 
-* More CPU time savings in Balatro's per-frame Lua work, for 60 fps in runs.
-* More GPU headroom: xost, the console's shader compiler, spends a fifth to a
-  third of the CRT effect's instructions on register copies.
-
-## Credits and licenses
-
-Third-party code and licenses are listed in [THIRD_PARTY.md](THIRD_PARTY.md).
-Balatro and all of its assets belong to their respective owners; this project is
-not affiliated with or endorsed by LocalThunk or Playstack.
+**Developers:** building, how the port works and all the testing options are
+in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
