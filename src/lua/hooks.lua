@@ -22,9 +22,11 @@ local hooks = {}
 --     B360_HALF_RES_BACKGROUND = false  draw the swirling backgrounds at full
 --                             resolution (xSDK build; they're blocks of two
 --                             pixels anyway, so half size looks the same)
---     B360_INTERPOLATE = false  at 30 fps, show each frame twice instead of
---                             a frame halfway between each two (xSDK build;
---                             interpolating shows 60 a second, a frame late)
+--     B360_INTERPOLATE = true at 30 fps, show a frame halfway between each
+--                             two (xSDK build; 60 a second, a frame late, and
+--                             in-between frames go wrong when cards reorder)
+--     B360_SCREENSHOTS = true hold BACK and press RB for a screenshot in
+--                             shots\ (xSDK build)
 --     B360_RENDER_THREAD = false  draw on the game's thread (xSDK build; also
 --                             turns interpolation off)
 --     B360_SAFE_AREA = 0.9    shrink the picture for TVs that crop the edges
@@ -71,6 +73,9 @@ end
 local function apply_frame_rate(cfg)
 	if cfg.B360_INTERPOLATE ~= nil and love.graphics._b360_setInterpolation then
 		love.graphics._b360_setInterpolation(cfg.B360_INTERPOLATE and true or false)
+	end
+	if cfg.B360_SCREENSHOTS and love.graphics._b360_allowScreenshots then
+		love.graphics._b360_allowScreenshots(true)
 	end
 	local setter = love.graphics._b360_setFrameRate
 	if not setter then return end

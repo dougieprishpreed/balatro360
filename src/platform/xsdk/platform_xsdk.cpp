@@ -43,7 +43,9 @@ const int kTriggerThreshold = 30;
 double g_start = 0.0;
 bool g_quit = false;
 double g_quitComboStart = -1.0;
-// Hold BACK and press RB for a screenshot (Balatro doesn't use BACK).
+// Hold BACK and press RB for a screenshot (Balatro doesn't use BACK), once
+// allowScreenshots() turned it on.
+bool g_shotAllowed = false;
 bool g_shotHeld = false;
 bool g_shotWanted = false;
 int g_shotNumber = 0;
@@ -149,7 +151,7 @@ bool pump() {
         if (XamInputGetState(i, 0, &st) == 0) {
             u16 b = st.gamepad.buttons;
             if ((b & INPUT_GAMEPAD_BACK) && (b & INPUT_GAMEPAD_START)) combo = true;
-            if ((b & INPUT_GAMEPAD_BACK) && (b & INPUT_GAMEPAD_RIGHT_SHOULDER)) shot = true;
+            if (g_shotAllowed && (b & INPUT_GAMEPAD_BACK) && (b & INPUT_GAMEPAD_RIGHT_SHOULDER)) shot = true;
         }
     }
     if (shot && !g_shotHeld) g_shotWanted = true;
@@ -411,7 +413,8 @@ void padPoll(PadState pads[MAX_PADS]) {
         p.buttons[PAD_RIGHTSTICK] = (b & INPUT_GAMEPAD_RIGHT_THUMB) != 0;
         p.buttons[PAD_LEFTSHOULDER] = (b & INPUT_GAMEPAD_LEFT_SHOULDER) != 0;
         // RB with BACK held takes a screenshot (pump), not a game input.
-        p.buttons[PAD_RIGHTSHOULDER] = (b & INPUT_GAMEPAD_RIGHT_SHOULDER) != 0 && !(b & INPUT_GAMEPAD_BACK);
+        p.buttons[PAD_RIGHTSHOULDER] =
+            (b & INPUT_GAMEPAD_RIGHT_SHOULDER) != 0 && !(g_shotAllowed && (b & INPUT_GAMEPAD_BACK));
         p.buttons[PAD_DPUP] = (b & INPUT_GAMEPAD_DPAD_UP) != 0;
         p.buttons[PAD_DPDOWN] = (b & INPUT_GAMEPAD_DPAD_DOWN) != 0;
         p.buttons[PAD_DPLEFT] = (b & INPUT_GAMEPAD_DPAD_LEFT) != 0;
@@ -526,6 +529,8 @@ bool userName(std::string& name) {
 int processorCount() { return XSDK_HARDWARE_THREADS; }
 
 double fixedTimestep() { return 0.0; }
+
+void allowScreenshots(bool on) { g_shotAllowed = on; }
 
 bool screenshotRequested(std::string& path) {
     if (!g_shotWanted) return false;

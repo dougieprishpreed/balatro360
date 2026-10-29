@@ -579,6 +579,8 @@ int processorCount() { return 6; }
 
 double fixedTimestep() { return 0.0; }
 
+void allowScreenshots(bool on) { (void)on; }
+
 bool screenshotRequested(std::string& path) {
     (void)path;
     return false;

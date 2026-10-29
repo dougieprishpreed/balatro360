@@ -79,8 +79,9 @@ In the xSDK build the device is `src/gfx/threaded_device.cpp`, which wraps
 the Vulkan one: the game's thread records a frame's device calls into a
 packet (vertices, pixels and uniform values copied; shader creation and big
 uploads wait for the render thread) and hands it over at present(); the
-render thread replays packets on the real device. At 30 fps it presents a
-frame halfway between each two first: draws that match the previous
+render thread replays packets on the real device. With `B360_INTERPOLATE =
+true` (off by default), at 30 fps it presents a frame halfway between each
+two first: draws that match the previous
 packet's (same target, texture, shader, blend and vertex count, in order;
 none that moved more than 192 pixels) average their vertex positions and
 colours, and uniforms named after time are averaged. Each packet restates

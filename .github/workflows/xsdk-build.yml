@@ -1,9 +1,11 @@
 name: xSDK build
 
 # Builds default.xex with the open xSDK toolchain at the dependency revisions
-# pinned in tools/xsdk/bootstrap.sh. No game data is involved: the artifact
-# is the executable and its licences, to put next to your own prepared game
-# folder (tools/prepare_game.py).
+# pinned in tools/xsdk/bootstrap.sh. No game data is involved. Artifacts:
+#   balatro360-xex      default.xex, its licences and checksum
+#   balatro360-release  Balatro360-v<tools/release/VERSION>.zip, the release:
+#                       the XEX, the converter that copies the player's own
+#                       game files over, README.txt (tools/package_release.py)
 
 on:
   push:
@@ -66,7 +68,15 @@ jobs:
           cp THIRD_PARTY.md dist/THIRD_PARTY.md
           (cd dist && sha256sum default.xex | tee default.xex.sha256)
 
+      - name: Package the release zip
+        run: python3 tools/package_release.py dist --version "$(tr -d '[:space:]' < tools/release/VERSION)" --out release
+
       - uses: actions/upload-artifact@v4
         with:
           name: balatro360-xex
           path: dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: balatro360-release
+          path: release/*.zip

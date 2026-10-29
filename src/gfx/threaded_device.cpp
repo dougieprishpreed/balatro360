@@ -97,7 +97,7 @@ public:
     ThreadedDevice(Device* r, int c)
         : real(r), core(c), w(0), h(0), rec(new Packet), recSerial(1), target(NULL), pending(NULL), quit(false),
           job(NULL),
-          jobDone(false), interval(1), interpolate(true), shotWanted(false), shotReady(false), thread(NULL),
+          jobDone(false), interval(1), interpolate(false), shotWanted(false), shotReady(false), thread(NULL),
           prev(NULL), realInterval(1), shootInterpolated(false) {
         memset(&scissor, 0, sizeof(scissor));
         scissor.op = Cmd::SCISSOR;

@@ -162,6 +162,8 @@ int processorCount();
 double fixedTimestep();
 // True if a screenshot of the frame being presented should be written.
 bool screenshotRequested(std::string& path);
+// The xSDK build's screenshot button (BACK + RB), off unless turned on.
+void allowScreenshots(bool on);
 
 }  // namespace plat
 

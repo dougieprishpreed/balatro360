@@ -5,8 +5,11 @@ The xSDK build makes `default.xex` with open tools only: the
 binutils, newlib) and its GPU layer, with rendering through
 [vulkan4xenon](https://github.com/xenosworks/vulkan4xenon), a Vulkan 1.0
 subset for Xenos. No Microsoft XDK, Visual Studio or Windows build is
-involved, so GitHub Actions builds it too
-(`.github/workflows/xsdk-build.yml`, artifact `balatro360-xex`).
+involved, so GitHub Actions builds it on every push to `main`
+(`.github/workflows/xsdk-build.yml`): artifact `balatro360-xex` is the XEX
+and its licences, `balatro360-release` the release zip
+(`tools/package_release.py`: the XEX, the converter in `tools/release/` and
+its README, version from `tools/release/VERSION`).
 
 Like every xSDK title it runs on consoles that run unsigned code (RGH/JTAG,
 or an exploit such as ABadAvatar). **Xenia doesn't run xSDK titles**; test on
@@ -91,7 +94,7 @@ Copy `out\Balatro360` to the console (USB or hard disk) and launch
 | `cache\spirv\` | the game's shaders as SPIR-V, so later starts skip glslang (about a second) |
 | `cache\xenos\` | the same shaders compiled for Xenos by vulkan4xenon, so later starts skip that too |
 | `default.log` | xSDK's own log (start-up, exit, vulkan4xenon's messages, shader compile times) |
-| `shots\` | screenshots: hold **BACK** and press **RB**, and the next frame is saved as a PNG |
+| `shots\` | with `B360_SCREENSHOTS = true`: hold **BACK** and press **RB**, and the next frame is saved as a PNG |
 
 `b360.log` is the runtime's log, as before. The first start compiles all
 shaders on the console and is slower; delete `cache\` after updating the
@@ -157,11 +160,13 @@ There's no emulator, so two host checks stand in before a console run:
 * Frame pacing: vulkan4xenon's swapchain shows a frame per vblank. The
   renderer runs on a thread of its own (`src/gfx/threaded_device.h`): the
   game's thread records each frame and goes on with the next while hardware
-  thread 2 draws it. When the game drops to 30 fps, the render thread still
-  presents every vblank, a frame halfway between each two before the second
-  (`B360_INTERPOLATE = false` shows each twice instead, two vblanks apart).
-  Host builds test it with `B360_RENDER_THREAD=1` in the environment;
-  `B360_SHOT_INTERPOLATED=1` makes script screenshots of the halfway frames.
+  thread 2 draws it. At 30 fps each frame is shown for two vblanks.
+  `B360_INTERPOLATE = true` (experimental) presents every vblank instead, a
+  frame halfway between each two before the second: it flickers where the
+  draw order changes (selecting a card), and the GPU can't always draw two
+  frames in 33 ms. Host builds test the render thread with
+  `B360_RENDER_THREAD=1` in the environment; `B360_SHOT_INTERPOLATED=1` makes
+  script screenshots of the halfway frames.
 * Audio goes through xSDK's feeder for the kernel's render driver; the mix
   is stereo in its front channels.
 * The Microsoft XDK build ([BUILDING_XDK.md](BUILDING_XDK.md)) still builds

@@ -1815,6 +1815,13 @@ int w_getFrameInfo(lua_State* L) {
     return 3;
 }
 
+// Extension: love.graphics._b360_allowScreenshots(on): the xSDK build's
+// screenshot button (BACK + RB), off by default.
+int w_allowScreenshots(lua_State* L) {
+    plat::allowScreenshots(lua_toboolean(L, 1) != 0);
+    return 0;
+}
+
 // Extension: love.graphics._b360_setInterpolation(on): at 30 fps, show a
 // frame halfway between each two (gfx::Device::setFrameInterpolation).
 int w_setInterpolation(lua_State* L) {
@@ -1895,7 +1902,7 @@ const luaL_Reg kFuncs[] = {
     {"_b360_setSafeArea", w_setSafeArea}, {"_b360_setFrameRate", w_setFrameRate},
     {"_b360_getFrameInfo", w_getFrameInfo}, {"_b360_startProfiler", w_startProfiler},
     {"_b360_gpuProfile", w_gpuProfile}, {"_b360_setHalfResolution", w_setHalfResolution},
-    {"_b360_setInterpolation", w_setInterpolation},
+    {"_b360_setInterpolation", w_setInterpolation}, {"_b360_allowScreenshots", w_allowScreenshots},
     {"setStencilTest", w_none}, {"stencil", w_none}, {"flushBatch", w_none}, {"discard", w_none},
     {NULL, NULL}};
 

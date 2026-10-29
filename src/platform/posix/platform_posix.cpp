@@ -478,6 +478,8 @@ int processorCount() {
 
 double fixedTimestep() { return g_fixedDt; }
 
+void allowScreenshots(bool on) { (void)on; }   // script screenshots always work
+
 bool screenshotRequested(std::string& path) {
     if (g_shotPath.empty()) return false;
     path = g_shotPath;

@@ -6,9 +6,12 @@
 // packets, presenting one a vblank at most, so the game's thread only waits
 // for the GPU when it's a whole frame ahead.
 //
-// When the game can only keep up at 30 Hz (setPresentInterval(2)), the
-// render thread still presents every vblank: before each new packet it shows
-// one halfway from the packet before. Each draw that matches a draw of that
+// With setFrameInterpolation(true) (off by default: the console's GPU can't
+// draw two frames a game frame, and in-between frames go wrong where draw
+// order changes, as when a card is selected), when the game can only keep
+// up at 30 Hz (setPresentInterval(2)), the render thread still presents
+// every vblank: before each new packet it shows one halfway from the packet
+// before. Each draw that matches a draw of that
 // packet (same target, texture, shader, blend and vertex count, in order)
 // has its vertices' positions and colours averaged, and shaders their
 // uniforms named after time. The picture is then a game frame (33 ms)
