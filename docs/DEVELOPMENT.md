@@ -72,7 +72,8 @@ the `balatro360-xex` artifact (the workflow runs it; artifact
 | `Balatro360-Xbox360-<version>.zip` | for installing by hand: `apps\balatro360\` and `README.txt` (`tools/release/README.txt`) |
 | `balatro360-<version>.json` | the app's entry for [xenosworks/homebrew-app-catalogue](https://github.com/xenosworks/homebrew-app-catalogue)'s `catalogue.json`, with the package's size and hashes (from `tools/release/store_entry.json`) |
 
-Tag the release `v<version>` and upload both zips: the entry gives the
+Tag the release `v<version>` without a fix number of 0 (`v1.0.0` for
+1.0.0.0, `v1.0.0.1` for 1.0.0.1) and upload both zips: the entry gives the
 package's address under that tag. The pull request to the catalogue adds the
 entry and a 1280x720 screenshot, `shots/balatro360.png`; xenosworks signs
 the catalogue.

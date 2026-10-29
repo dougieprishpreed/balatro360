@@ -60,6 +60,14 @@ def sha256_file(path):
         return hashlib.sha256(f.read()).hexdigest()
 
 
+def release_tag(version):
+    """The GitHub release's tag: v1.0.0 for 1.0.0.0, v1.0.0.1 once there's a fix number."""
+    parts = version.split(".")
+    if len(parts) == 4 and parts[3] == "0":
+        parts = parts[:3]
+    return "v" + ".".join(parts)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("artifact", help="the balatro360-xex artifact (zip or folder)")
@@ -95,7 +103,8 @@ def main():
     package = os.path.join(args.out, "%s-%s.zip" % (APP, args.version))
     by_hand = os.path.join(args.out, "Balatro360-Xbox360-%s.zip" % args.version)
     entry_path = os.path.join(args.out, "%s-%s.json" % (APP, args.version))
-    url = "%s/releases/download/v%s/%s" % (REPO, args.version, os.path.basename(package))
+    tag = release_tag(args.version)
+    url = "%s/releases/download/%s/%s" % (REPO, tag, os.path.basename(package))
 
     with tempfile.TemporaryDirectory() as work:
         folder = os.path.join(work, APP)
@@ -149,7 +158,7 @@ def main():
     for path in (package, by_hand):
         print("%s  sha256 %s" % (os.path.basename(path), sha256_file(path)))
     print("wrote %s, %s and %s" % (package, by_hand, entry_path))
-    print("upload both zips to the release tagged v%s; the package's address is %s" % (args.version, url))
+    print("upload both zips to the release tagged %s; the package's address is %s" % (tag, url))
 
 
 if __name__ == "__main__":
