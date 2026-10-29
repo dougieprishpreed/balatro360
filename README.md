@@ -2,14 +2,15 @@
 
 Play [Balatro](https://www.playbalatro.com/) on your Xbox 360.
 
-Balatro360 is an unofficial, fan-made port for consoles that can run homebrew.
-**The game isn't included:** you need your own copy of Balatro for PC, and the
-converter in the download copies your game's files across for you.
+Balatro360 is an unofficial, fan-made port.
+**The game isn't included:** you need your own copy of Balatro for PC.
+
+Balatro360 is built with the open [xSDK](https://github.com/xenosworks/xsdk)
+toolchain and [vulkan4xenon](https://github.com/xenosworks/vulkan4xenon).
 
 ## What you need
 
-* An Xbox 360 that can run homebrew (RGH, JTAG or ABadAvatar), with a way to
-  launch `.xex` files, such as Aurora, Freestyle Dash or XeXMenu
+* An Xbox 360 that can run homebrew (RGH or ABadAvatar)
 * Balatro for Windows from Steam
 * A Windows 10 or 11 PC (on a Mac or Linux, see [below](#on-a-mac-or-linux))
 * A USB drive or the console's hard drive, with about 100 MB free
