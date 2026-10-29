@@ -103,8 +103,16 @@ return {
                             -- game spends its time in (slightly slower)
     B360_GPU_PROFILE = true, -- xSDK build, every 10 s in b360.log: the GPU
                             -- time of each shader and render pass in one frame
+    B360_INTERPOLATE = false, -- xSDK build: at 30 fps, show each frame twice
+                            -- rather than a frame halfway between each two
+    B360_RENDER_THREAD = false, -- xSDK build: draw on the game's thread (also
+                            -- turns interpolation off)
 }
 ```
+
+The xSDK build always shows 60 frames a second: where the game can't update
+that often (most of a run), it updates at 30 and each frame in between is
+drawn halfway between the two around it, a frame (33 ms) behind the game.
 
 `b360.log` also notes every switch between 60 and 30 fps (`[pace]` lines).
 

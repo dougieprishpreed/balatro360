@@ -144,9 +144,11 @@ public:
         running = true;
         started = true;
         retain();   // released when the thread exits
-        static int core = 2;
+        // Hardware threads 4 and 5 (core 2): the game runs on 0, the render
+        // thread and audio on core 1.
+        static int core = 4;
         th = plat::threadCreate(entry, this, core);
-        core = core >= 5 ? 2 : core + 1;
+        core = core >= 5 ? 4 : core + 1;
         if (!th) {
             running = false;
             release();

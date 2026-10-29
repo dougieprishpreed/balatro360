@@ -22,6 +22,11 @@ local hooks = {}
 --     B360_HALF_RES_BACKGROUND = false  draw the swirling backgrounds at full
 --                             resolution (xSDK build; they're blocks of two
 --                             pixels anyway, so half size looks the same)
+--     B360_INTERPOLATE = false  at 30 fps, show each frame twice instead of
+--                             a frame halfway between each two (xSDK build;
+--                             interpolating shows 60 a second, a frame late)
+--     B360_RENDER_THREAD = false  draw on the game's thread (xSDK build; also
+--                             turns interpolation off)
 --     B360_SAFE_AREA = 0.9    shrink the picture for TVs that crop the edges
 local user_config
 local function config()
@@ -64,6 +69,9 @@ end
 
 -- Frame rate (see FramePacer in src/runtime/pacing.cpp).
 local function apply_frame_rate(cfg)
+	if cfg.B360_INTERPOLATE ~= nil and love.graphics._b360_setInterpolation then
+		love.graphics._b360_setInterpolation(cfg.B360_INTERPOLATE and true or false)
+	end
 	local setter = love.graphics._b360_setFrameRate
 	if not setter then return end
 	local fps = cfg.B360_FPS
@@ -126,9 +134,11 @@ local function install_perf_tools(cfg)
 		end
 		if now - window_start >= window then
 			if log_perf then
-				local vb = frame_info and frame_info() or 1
-				print(string.format("[perf] %d frames, avg %.1f ms (%.1f fps, target %d), worst %.1f ms, Lua heap %.1f MB",
-					frames, acc / frames, 1000 * frames / acc, vb == 2 and 30 or 60, worst, collectgarbage("count") / 1024))
+				local vb, _, lerp = 1, 0, false
+				if frame_info then vb, _, lerp = frame_info() end
+				print(string.format("[perf] %d frames, avg %.1f ms (%.1f fps, target %d%s), worst %.1f ms, Lua heap %.1f MB",
+					frames, acc / frames, 1000 * frames / acc, vb == 2 and 30 or 60, lerp and ", shown at 60 interpolated" or "",
+					worst, collectgarbage("count") / 1024))
 				print(string.format("[perf]   per frame: update %.1f ms, draw %.1f ms, present %.1f ms, %d draw calls, %d vertices",
 					upd * 1000 / frames, drw * 1000 / frames, pres * 1000 / frames, calls / frames, verts / frames))
 			end
@@ -143,8 +153,15 @@ local function install_perf_tools(cfg)
 			graphics.origin()
 			local text
 			if frame_info then
-				local vb, cpu = frame_info()
-				text = string.format("%d FPS  %.1f ms  CPU %.1f ms  [%d]", timer.getFPS(), shown_ms, cpu, vb == 2 and 30 or 60)
+				local vb, cpu, lerp = frame_info()
+				if lerp then
+					-- Each game frame and one halfway to it are shown.
+					text = string.format("%d FPS (game %d)  %.1f ms  CPU %.1f ms  [30>60]", 2 * timer.getFPS(),
+						timer.getFPS(), shown_ms, cpu)
+				else
+					text = string.format("%d FPS  %.1f ms  CPU %.1f ms  [%s]", timer.getFPS(), shown_ms, cpu,
+						vb == 2 and "30" or "60")
+				end
 			else
 				text = string.format("%d FPS  %.1f ms", timer.getFPS(), shown_ms)
 			end

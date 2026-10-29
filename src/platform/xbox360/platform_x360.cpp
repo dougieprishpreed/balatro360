@@ -195,12 +195,13 @@ static DWORD WINAPI threadTrampoline(LPVOID p) {
     return 0;
 }
 
-Thread* threadCreate(ThreadFunc fn, void* arg, int preferredCore) {
+Thread* threadCreate(ThreadFunc fn, void* arg, int preferredCore, size_t stackBytes) {
     Thread* t = new Thread;
     t->fn = fn;
     t->arg = arg;
     DWORD id = 0;
-    t->h = CreateThread(NULL, 1024 * 1024, threadTrampoline, t, CREATE_SUSPENDED, &id);
+    t->h = CreateThread(NULL, stackBytes ? (SIZE_T)stackBytes : 1024 * 1024, threadTrampoline, t, CREATE_SUSPENDED,
+                        &id);
     if (!t->h) {
         delete t;
         return NULL;

@@ -154,8 +154,14 @@ There's no emulator, so two host checks stand in before a console run:
     the wrong place.
   * `length()` is `sqrt(dot(v, v))`: with xost's optimiser, which
     vulkan4xenon always runs, a shader's second `length()` came out wrong.
-* Frame pacing: vulkan4xenon's swapchain shows a frame per vblank; the 30
-  fps mode queues frames two vblanks apart.
+* Frame pacing: vulkan4xenon's swapchain shows a frame per vblank. The
+  renderer runs on a thread of its own (`src/gfx/threaded_device.h`): the
+  game's thread records each frame and goes on with the next while hardware
+  thread 2 draws it. When the game drops to 30 fps, the render thread still
+  presents every vblank, a frame halfway between each two before the second
+  (`B360_INTERPOLATE = false` shows each twice instead, two vblanks apart).
+  Host builds test it with `B360_RENDER_THREAD=1` in the environment;
+  `B360_SHOT_INTERPOLATED=1` makes script screenshots of the halfway frames.
 * Audio goes through xSDK's feeder for the kernel's render driver; the mix
   is stereo in its front channels.
 * The Microsoft XDK build ([BUILDING_XDK.md](BUILDING_XDK.md)) still builds

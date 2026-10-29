@@ -9,11 +9,15 @@
 #include "pacing.h"
 #include "../gfx/device.h"
 #include "../gfx/shader_translate.h"
+#ifdef B360_RENDER_THREAD
+#include "../gfx/threaded_device.h"
+#endif
 
 #include "stb_image.h"
 #include "stb_image_write.h"
 
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 #include <map>
 
@@ -1807,7 +1811,15 @@ int w_gpuProfile(lua_State* L) {
 int w_getFrameInfo(lua_State* L) {
     lua_pushinteger(L, g_pacer.interval());
     lua_pushnumber(L, g_pacer.cpuMs());
-    return 2;
+    lua_pushboolean(L, g_dev->frameInterpolation());   // shown at 60 regardless
+    return 3;
+}
+
+// Extension: love.graphics._b360_setInterpolation(on): at 30 fps, show a
+// frame halfway between each two (gfx::Device::setFrameInterpolation).
+int w_setInterpolation(lua_State* L) {
+    lua_pushboolean(L, g_dev->setFrameInterpolation(lua_toboolean(L, 1) != 0));
+    return 1;
 }
 
 // Extension: love.graphics._b360_setSafeArea(scale), scale in [0.5, 1].
@@ -1883,6 +1895,7 @@ const luaL_Reg kFuncs[] = {
     {"_b360_setSafeArea", w_setSafeArea}, {"_b360_setFrameRate", w_setFrameRate},
     {"_b360_getFrameInfo", w_getFrameInfo}, {"_b360_startProfiler", w_startProfiler},
     {"_b360_gpuProfile", w_gpuProfile}, {"_b360_setHalfResolution", w_setHalfResolution},
+    {"_b360_setInterpolation", w_setInterpolation},
     {"setStencilTest", w_none}, {"stencil", w_none}, {"flushBatch", w_none}, {"discard", w_none},
     {NULL, NULL}};
 
@@ -1891,8 +1904,38 @@ const luaL_Reg kFuncs[] = {
 int graphicsWidth() { return g_dev ? g_dev->width() : 1280; }
 int graphicsHeight() { return g_dev ? g_dev->height() : 720; }
 
+#ifdef B360_RENDER_THREAD
+// The render thread (gfx/threaded_device.h): on in the xSDK build unless
+// b360_config.lua sets B360_RENDER_THREAD = false (read here, before Lua
+// starts), on in host builds with B360_RENDER_THREAD=1 in the environment.
+bool renderThreadWanted() {
+    std::string cfg;
+    if (fs::read("b360_config.lua", cfg)) {
+        size_t at = cfg.find("B360_RENDER_THREAD");
+        if (at != std::string::npos) {
+            size_t end = cfg.find_first_of(",\n}", at);
+            std::string setting = cfg.substr(at, end == std::string::npos ? std::string::npos : end - at);
+            return setting.find("false") == std::string::npos;
+        }
+    }
+#ifdef __XSDK__
+    return true;
+#else
+    const char* env = getenv("B360_RENDER_THREAD");
+    return env && env[0] == '1';
+#endif
+}
+#endif
+
 bool initGraphics(int width, int height) {
     g_dev = gfx::createDevice();
+#ifdef B360_RENDER_THREAD
+    // Hardware thread 2 (core 1, beside audio); the game runs on core 0.
+    if (g_dev && renderThreadWanted()) {
+        plat::log("[graphics] drawing on a render thread");
+        g_dev = gfx::createThreadedDevice(g_dev, 2);
+    }
+#endif
     if (!g_dev || !g_dev->init(width, height)) return false;
     u8 white[4] = {255, 255, 255, 255};
     g_white = g_dev->createTexture(1, 1, white, false);

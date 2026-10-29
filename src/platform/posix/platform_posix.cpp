@@ -221,14 +221,14 @@ static void* threadTrampoline(void* p) {
     return NULL;
 }
 
-Thread* threadCreate(ThreadFunc fn, void* arg, int preferredCore) {
+Thread* threadCreate(ThreadFunc fn, void* arg, int preferredCore, size_t stackBytes) {
     (void)preferredCore;
     Thread* t = new Thread;
     t->fn = fn;
     t->arg = arg;
     pthread_attr_t attr;
     pthread_attr_init(&attr);
-    pthread_attr_setstacksize(&attr, 1024 * 1024);
+    pthread_attr_setstacksize(&attr, stackBytes ? stackBytes : 1024 * 1024);
     if (pthread_create(&t->th, &attr, threadTrampoline, t) != 0) {
         pthread_attr_destroy(&attr);
         delete t;

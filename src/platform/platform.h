@@ -47,7 +47,8 @@ u64 unixTime();            // wall clock seconds since 1970 (for os.time)
 typedef void (*ThreadFunc)(void* arg);
 struct Thread;
 // preferredCore: hint for the 360's six hardware threads (-1 = any).
-Thread* threadCreate(ThreadFunc fn, void* arg, int preferredCore);
+// stackBytes: 0 for the default (1 MB).
+Thread* threadCreate(ThreadFunc fn, void* arg, int preferredCore, size_t stackBytes = 0);
 void threadJoin(Thread* t);   // waits and frees
 
 class Mutex {

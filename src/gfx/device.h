@@ -132,6 +132,12 @@ public:
     // paces frames itself.
     virtual bool setPresentInterval(int vblanks) { (void)vblanks; return false; }
 
+    // At 2 vblanks a frame, show a frame halfway between each two the game
+    // drew in the vblank between them (src/gfx/threaded_device.h). False if
+    // the backend can't; frameInterpolation() says whether it's doing it now.
+    virtual bool setFrameInterpolation(bool on) { (void)on; return false; }
+    virtual bool frameInterpolation() const { return false; }
+
     // Read back the current back buffer as RGBA8 (for screenshots). A
     // backend that can't read the frame it drew may still read the next one:
     // captureNextFrame() says so, and readBackbuffer() works for that frame.

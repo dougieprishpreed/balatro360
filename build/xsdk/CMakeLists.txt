@@ -36,6 +36,7 @@ file(GLOB RUNTIME_SOURCES "${ROOT}/src/runtime/*.cpp")
 set(SOURCES
     ${RUNTIME_SOURCES}
     "${ROOT}/src/gfx/shader_translate.cpp"
+    "${ROOT}/src/gfx/threaded_device.cpp"
     "${ROOT}/src/gfx/vulkan/device_vk.cpp"
     "${ROOT}/src/platform/xsdk/platform_xsdk.cpp"
     "${ROOT}/src/platform/xsdk/main_xsdk.cpp")
@@ -66,6 +67,8 @@ set_source_files_properties("${ROOT}/third_party/miniz/miniz.c" "${ROOT}/third_p
 if(B360_GIT_COMMIT)
     target_compile_definitions(balatro360 PRIVATE B360_GIT_COMMIT="${B360_GIT_COMMIT}" B360_GIT_DATE="${B360_GIT_DATE}")
 endif()
+# Draw on a render thread, with frame interpolation (src/gfx/threaded_device.h).
+target_compile_definitions(balatro360 PRIVATE B360_RENDER_THREAD)
 
 if(B360_LUAJIT)
     target_compile_definitions(balatro360 PRIVATE B360_LUAJIT)

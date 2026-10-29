@@ -46,6 +46,10 @@ MINIZ_SRC := third_party/miniz/miniz.c third_party/miniz/miniz_tdef.c third_part
 RUNTIME_SRC := $(wildcard src/runtime/*.cpp) src/gfx/shader_translate.cpp src/third_party_impl.cpp \
 	src/platform/posix/platform_posix.cpp src/platform/posix/main_posix.cpp
 
+# The render thread (src/gfx/threaded_device.h), used when B360_RENDER_THREAD=1.
+RUNTIME_SRC += src/gfx/threaded_device.cpp
+CXXFLAGS += -DB360_RENDER_THREAD
+
 ifeq ($(GFX),gl)
 RUNTIME_SRC += src/gfx/gl/device_gl.cpp
 LIBS := -lOSMesa -lpthread -lm
