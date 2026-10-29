@@ -99,6 +99,8 @@ public:
 class VkShaderObj : public Shader {
 public:
     VkShaderModule vs, fs;
+    VkShaderModule fsNoIfs;        // the pixel stage without its uniform ifs, or none
+    std::vector<std::vector<VkLoopGuard> > uniformIfs;   // their guards
     std::vector<int> offsets;      // std140 offset of each uniform
     std::vector<u8> block;         // the uniform block, builtins first
     int blockBytes;
@@ -108,32 +110,49 @@ public:
     u32 uploadedSerial;            // frame the block was last written in
     VkDeviceSize uploadedOffset;
     int uploadedW, uploadedH;
-    std::map<u32, VkPipeline> pipelines;   // by blend mode and colour mask
+    bool uploadedHalf;
+    std::map<u32, VkPipeline> pipelines;   // by blend mode, colour mask and variant
 
     VkShaderObj()
-        : vs(VK_NULL_HANDLE), fs(VK_NULL_HANDLE), blockBytes(VK_BUILTIN_UNIFORM_BYTES), loopAt(0), dirty(true),
-          uploadedSerial(0), uploadedOffset(0), uploadedW(0), uploadedH(0) {}
+        : vs(VK_NULL_HANDLE), fs(VK_NULL_HANDLE), fsNoIfs(VK_NULL_HANDLE), blockBytes(VK_BUILTIN_UNIFORM_BYTES),
+          loopAt(0), dirty(true), uploadedSerial(0), uploadedOffset(0), uploadedW(0), uploadedH(0),
+          uploadedHalf(false) {}
+
+    // A guard against the uniform's value now (a uniform without a place in
+    // the block holds).
+    bool holds(const VkLoopGuard& g) const {
+        int at = g.uniform < (int)offsets.size() ? offsets[g.uniform] : -1;
+        if (at < 0 || at + 4 > (int)block.size()) return true;
+        float v;
+        memcpy(&v, &block[at], 4);
+        switch (g.op) {
+        case VkLoopGuard::GT: return v > g.value;
+        case VkLoopGuard::GE: return v >= g.value;
+        case VkLoopGuard::LT: return v < g.value;
+        default: return v <= g.value;
+        }
+    }
+
+    bool allHold(const std::vector<VkLoopGuard>& guards) const {
+        for (size_t g = 0; g < guards.size(); ++g)
+            if (!holds(guards[g])) return false;
+        return true;
+    }
+
+    // Whether every uniform if fails, so the variant without them draws the same.
+    bool uniformIfsFail() const {
+        if (!fsNoIfs) return false;
+        for (size_t k = 0; k < uniformIfs.size(); ++k)
+            if (allHold(uniformIfs[k])) return false;
+        return true;
+    }
 
     // Each loop's int: its count, or its start (no passes) where a guard
     // fails, as the console runs the if around it for every pixel.
     void putLoopCounts() {
         for (size_t k = 0; k < loops.size(); ++k) {
             const VkHardwareLoop& l = loops[k];
-            bool on = true;
-            for (size_t g = 0; g < l.guards.size() && on; ++g) {
-                const VkLoopGuard& gd = l.guards[g];
-                int at = gd.uniform < (int)offsets.size() ? offsets[gd.uniform] : -1;
-                if (at < 0 || at + 4 > (int)block.size()) continue;
-                float v;
-                memcpy(&v, &block[at], 4);
-                switch (gd.op) {
-                case VkLoopGuard::GT: on = v > gd.value; break;
-                case VkLoopGuard::GE: on = v >= gd.value; break;
-                case VkLoopGuard::LT: on = v < gd.value; break;
-                default: on = v <= gd.value; break;
-                }
-            }
-            int n = on ? l.count : l.start;
+            int n = allHold(l.guards) ? l.count : l.start;
             int at = loopAt + 4 * (int)k;
             if (at + 4 <= (int)block.size()) memcpy(&block[at], &n, 4);
         }
@@ -211,7 +230,8 @@ public:
           passOpen(false), pendingClear(false), passTex(NULL), vertexUsed(0), uniformUsed(0), stagingUsed(0),
           boundPipeline(VK_NULL_HANDLE), boundSet(VK_NULL_HANDLE), boundOffset(~(VkDeviceSize)0),
           defaultShader(NULL), scissorOn(false), sx(0), sy(0), sw(0), sh(0), maskBits(15), interval(1),
-          lastQueueVblank(0), captureTex(NULL), captureWanted(false), captureFrame(false),
+          lastQueueVblank(0), halfLayer(NULL), halfResDrawing(false), halfFullW(0), halfFullH(0), captureTex(NULL),
+          captureWanted(false), captureFrame(false),
           queryPool(VK_NULL_HANDLE), tickNs(1.0f), gpuEvery(0.0), gpuLast(0.0), profiling(false), cpuFence(0.0),
           cpuAcquire(0.0), cpuSubmit(0.0), cpuPresent(0.0), cpuFrames(0) {
         memset(clearColor, 0, sizeof(clearColor));
@@ -421,6 +441,9 @@ public:
         VkDeviceSize bytes = (VkDeviceSize)count * sizeof(Vertex);
         if (bytes > kVertexRing) return;
         VkShaderObj* s = shader ? (VkShaderObj*)shader : defaultShader;
+        if (s->halfRes && !halfResDrawing && target && blend == BLEND_ALPHA && !scissorOn && maskBits == 15 &&
+            target->width >= 2 && target->height >= 2 && drawHalfRes(verts, count, tex, s, blend))
+            return;
         ensurePass();
         VkDeviceSize need = alignUp((VkDeviceSize)s->blockBytes, kUniformAlign);
         if (vertexUsed + bytes > kVertexRing || uniformUsed + need > kUniformRing) {
@@ -428,7 +451,7 @@ public:
             ensurePass();
         }
         VkCommandBuffer cmd = frames[frame].cmd;
-        VkPipeline p = pipeline(s, blend);
+        VkPipeline p = pipeline(s, blend, s->uniformIfsFail());
         if (p == VK_NULL_HANDLE) return;
         if (p != boundPipeline) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p);
@@ -447,7 +470,45 @@ public:
         gpuCopy(vertexRing.map + frame * kVertexRing + vertexUsed, verts, (size_t)bytes);
         vertexUsed += bytes;
         vkCmdDraw(cmd, (u32)count, 1, first, 0);
-        if (profiling) stamp(s->name + " -> " + targetName(passTex));
+        if (profiling) stamp(s->name + (halfResDrawing ? " (half size) -> " : " -> ") + targetName(passTex));
+    }
+
+    // A shader marked halfRes (backgrounds that are blocks of two pixels or
+    // more anyway) draws into a target of half the width and height, which
+    // is then drawn over the canvas, nearest: a fourth of the pixels. For
+    // alpha blending that's what drawing straight in gives, as the layer
+    // holds the colour premultiplied by alpha. False if there's no layer.
+    bool drawHalfRes(const Vertex* verts, int count, Texture* tex, VkShaderObj* s, BlendMode blend) {
+        VkTex* full = target;
+        int lw = full->width / 2, lh = full->height / 2;
+        if (!halfLayer || halfLayer->width != lw || halfLayer->height != lh) {
+            beginFrame();
+            if (halfLayer) frames[frame].deadTextures.push_back(halfLayer);
+            halfLayer = makeTarget(lw, lh, false);
+            if (!halfLayer) return false;
+            halfLayer->minFilter = halfLayer->magFilter = FILTER_NEAREST;
+        }
+        if (passOpen) endPass();   // what the canvas drew so far; a clear not begun yet stays for after
+        bool pending = pendingClear;
+        float colour[4];
+        memcpy(colour, clearColor, sizeof(colour));
+        target = halfLayer;
+        memset(clearColor, 0, sizeof(clearColor));
+        pendingClear = true;
+        halfResDrawing = true;
+        halfFullW = full->width;
+        halfFullH = full->height;
+        drawTriangles(verts, count, tex, s, blend);
+        endPass();
+        halfResDrawing = false;
+        target = full;
+        pendingClear = pending;
+        memcpy(clearColor, colour, sizeof(colour));
+        float fw = (float)full->width, fh = (float)full->height;
+        Vertex q[6] = {{0, 0, 0, 0, 1, 1, 1, 1},   {fw, 0, 1, 0, 1, 1, 1, 1},  {fw, fh, 1, 1, 1, 1, 1, 1},
+                       {0, 0, 0, 0, 1, 1, 1, 1},   {fw, fh, 1, 1, 1, 1, 1, 1}, {0, fh, 0, 1, 1, 1, 1, 1}};
+        drawTriangles(q, 6, halfLayer, defaultShader, BLEND_ALPHA_PREMUL);
+        return true;
     }
 
     virtual void present() {
@@ -626,6 +687,10 @@ private:
     u32 maskBits;
     int interval;
     u32 lastQueueVblank;
+    // Half-size drawing (drawHalfRes): the layer, and the full target's size.
+    VkTex* halfLayer;
+    bool halfResDrawing;
+    int halfFullW, halfFullH;
     // Screenshots on a display (captureNextFrame): the frame draws the screen
     // into captureTex, which is read back, then drawn to the swapchain image.
     VkTex* captureTex;
@@ -967,15 +1032,20 @@ private:
         }
         if (!backbuffer) {
             // LÖVE's canvases start transparent; one may be drawn before it is
-            // drawn into.
+            // drawn into. The current target keeps a clear it has pending.
             VkTex* saved = target;
-            endPass();
+            bool pending = pendingClear;
+            float colour[4];
+            memcpy(colour, clearColor, sizeof(colour));
+            if (passOpen) endPass();
             target = t;
             memset(clearColor, 0, sizeof(clearColor));
             pendingClear = true;
             ensurePass();
             endPass();
             target = saved;
+            pendingClear = pending;
+            memcpy(clearColor, colour, sizeof(colour));
         }
         return t;
     }
@@ -997,6 +1067,7 @@ private:
             vkDestroyPipeline(dev, it->second, NULL);
         if (s->vs) vkDestroyShaderModule(dev, s->vs, NULL);
         if (s->fs) vkDestroyShaderModule(dev, s->fs, NULL);
+        if (s->fsNoIfs) vkDestroyShaderModule(dev, s->fsNoIfs, NULL);
         delete s;
     }
 
@@ -1498,7 +1569,7 @@ private:
     bool buildModules(VkShaderObj* s, const std::string& source, const LoveShaderInfo& info, std::string& err) {
         std::vector<std::string> warnings;
         std::string vsrc = buildVulkanGLSLStage(source, info, true, &warnings);
-        std::string fsrc = buildVulkanGLSLStage(source, info, false, &warnings, &s->loops);
+        std::string fsrc = buildVulkanGLSLStage(source, info, false, &warnings, &s->loops, &s->uniformIfs);
         for (size_t i = 0; i < warnings.size(); ++i) plat::log("[vk] shader warning: %s", warnings[i].c_str());
         std::vector<u32> vcode, fcode;
         bool ok = spirv(true, vsrc, vcode, err);
@@ -1522,11 +1593,22 @@ private:
             return false;
         }
         s->block.assign(s->blockBytes, 0);
+        if (!s->uniformIfs.empty()) {
+            // The variant drawn while every uniform if fails (CRT with bloom
+            // and glitches off: a fifth fewer instructions a pixel).
+            std::string fsrcNoIfs = buildVulkanGLSLStage(source, info, false, NULL, NULL, NULL, true);
+            std::vector<u32> code;
+            std::string why;
+            if (!spirv(false, fsrcNoIfs, code, why) || !module(code, s->fsNoIfs)) {
+                plat::log("[vk] the variant without uniform ifs failed, drawing the whole shader:\n%s", why.c_str());
+                s->fsNoIfs = VK_NULL_HANDLE;
+            }
+        }
         return true;
     }
 
-    VkPipeline pipeline(VkShaderObj* s, BlendMode blend) {
-        u32 key = (u32)blend | (maskBits << 8);
+    VkPipeline pipeline(VkShaderObj* s, BlendMode blend, bool noIfs) {
+        u32 key = (u32)blend | (maskBits << 8) | (noIfs ? 1u << 16 : 0u);
         std::map<u32, VkPipeline>::iterator it = s->pipelines.find(key);
         if (it != s->pipelines.end()) return it->second;
 
@@ -1537,7 +1619,7 @@ private:
         st[0].module = s->vs;
         st[0].pName = "main";
         st[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-        st[1].module = s->fs;
+        st[1].module = noIfs ? s->fsNoIfs : s->fs;
         st[1].pName = "main";
 
         VkVertexInputBindingDescription vb = {0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX};
@@ -1670,12 +1752,20 @@ private:
     VkDeviceSize uniforms(VkShaderObj* s) {
         VkTex* t = target ? target : passTex;
         int tw = t ? t->width : w, th = t ? t->height : h;
-        if (!s->dirty && s->uploadedSerial == serial && s->uploadedW == tw && s->uploadedH == th)
+        if (halfResDrawing) {   // the full target's pixels and size, drawn into its half-size layer
+            tw = halfFullW;
+            th = halfFullH;
+        }
+        if (!s->dirty && s->uploadedSerial == serial && s->uploadedW == tw && s->uploadedH == th &&
+            s->uploadedHalf == halfResDrawing)
             return s->uploadedOffset;
         VkDeviceSize need = alignUp((VkDeviceSize)s->blockBytes, kUniformAlign);
-        // Pixels (y down) to Vulkan's clip space (y down), column-major.
-        float builtins[20] = {2.0f / tw, 0, 0, 0,  0, 2.0f / th, 0, 0,  0, 0, 1, 0,  -1, -1, 0, 1,
-                              (float)tw, (float)th, 1.0f, 0.0f};
+        // Pixels (y down) to Vulkan's clip space (y down), column-major; then
+        // love_ScreenSize and b360_FragCoordMap, which takes a half-size
+        // layer's pixel centres to the top left of each two by two.
+        float half = halfResDrawing ? 2.0f : 1.0f;
+        float builtins[24] = {2.0f / tw, 0, 0, 0,  0, 2.0f / th, 0, 0,  0, 0, 1, 0,  -1, -1, 0, 1,
+                              (float)tw, (float)th, 1.0f, 0.0f,  half, half, 0.5f - 0.5f * half, 0.5f - 0.5f * half};
         memcpy(&s->block[0], builtins, sizeof(builtins));
         s->putLoopCounts();
         VkDeviceSize offset = (VkDeviceSize)frame * kUniformRing + uniformUsed;
@@ -1686,6 +1776,7 @@ private:
         s->uploadedOffset = offset;
         s->uploadedW = tw;
         s->uploadedH = th;
+        s->uploadedHalf = halfResDrawing;
         return offset;
     }
 

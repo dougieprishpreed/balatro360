@@ -132,9 +132,13 @@ There's no emulator, so two host checks stand in before a console run:
 
 * What the translator does for xost (`src/gfx/shader_translate.cpp`,
   `VkTranslator`), as the XDK's HLSL compiler did these itself:
-  * `sin`, `cos` and `tan` take their angle moved into -pi..pi first: xost
-    emits the bare hardware ops, which are only right there
-    (xost's `docs/xsc.md`, "Approximate builtins").
+  * A pixel stage's `if`s that only compare uniforms with numbers (CRT's
+    glitch and bloom) cost every pixel even when they fail, so the stage is
+    also built without them, and that variant draws while they all fail
+    (CRT: 261 instructions a pixel instead of 315).
+  * `background.fs` and `splash.fs` (blocks of about two pixels) draw at half
+    size into a layer that's then drawn over the canvas
+    (`B360_HALF_RES_BACKGROUND = false` turns it off).
   * The innermost loop of a nest (CRT's bloom, the hologram's glow) is a
     hardware loop counted by an int in the uniform block, `i < b360_loopN`;
     unrolled, the nests need more than 64 registers, and a loop counted by

@@ -19,6 +19,9 @@ local hooks = {}
 --                             (costs a little speed while enabled)
 --     B360_GPU_PROFILE = true log the GPU time of each draw of one frame
 --                             every 10 s (xSDK build)
+--     B360_HALF_RES_BACKGROUND = false  draw the swirling backgrounds at full
+--                             resolution (xSDK build; they're blocks of two
+--                             pixels anyway, so half size looks the same)
 --     B360_SAFE_AREA = 0.9    shrink the picture for TVs that crop the edges
 local user_config
 local function config()
@@ -221,6 +224,24 @@ local function flatten_classes()
 	return copied, #classes
 end
 
+-- The swirling backgrounds (background.fs in a run, splash.fs on the title
+-- screen) cover the screen in blocks of about two pixels, and are each
+-- frame's most costly draw after the CRT pass: draw them at half size.
+local HALF_RES_SHADERS = { ["background.fs"] = true, ["splash.fs"] = true }
+local function install_half_res(cfg)
+	local graphics = love.graphics
+	if cfg.B360_HALF_RES_BACKGROUND == false or not graphics._b360_setHalfResolution then return end
+	local new_shader = graphics.newShader
+	graphics.newShader = function(code, ...)
+		local shader = new_shader(code, ...)
+		local file = type(code) == "string" and code:match("([^/]+)$")
+		if file and HALF_RES_SHADERS[file] and not code:find("\n") then
+			graphics._b360_setHalfResolution(shader, true)
+		end
+		return shader
+	end
+end
+
 -- Called by boot.lua after main.lua (and every module it requires) loaded.
 function love._b360_postmain()
 	local copied, n = flatten_classes()
@@ -231,6 +252,7 @@ function love._b360_postmain()
 	end
 	apply_frame_rate(cfg)
 	install_perf_tools(cfg)
+	install_half_res(cfg)
 end
 
 -- Wrap require so hooks run once their module has loaded.

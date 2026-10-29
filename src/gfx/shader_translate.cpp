@@ -597,19 +597,26 @@ struct VkLoop {
 
 class VkTranslator {
 public:
-    VkTranslator(const std::vector<Token>& t, const LoveShaderInfo& i, bool vertex, std::vector<std::string>* w)
+    VkTranslator(const std::vector<Token>& t, const LoveShaderInfo& i, bool vertex, std::vector<std::string>* w,
+                 bool withoutIfs)
         : toks(t), info(i), warnings(w), vertexStage(vertex), voidFunc(false), usesAtan2(false), usesLength(false),
           posBodyB(0), posBodyE(0) {
         markUniformDecls();
         collectIntDefines();
         markConstLocals();
-        if (vertexStage) markPositionMatrix();
-        else markInnerLoops();
+        if (vertexStage) {
+            markPositionMatrix();
+        } else {
+            markInnerLoops();
+            markUniformIfs(withoutIfs);
+            if (withoutIfs) markConstFloats();
+        }
     }
 
     bool needsAtan2() const { return usesAtan2; }
     bool needsLength() const { return usesLength; }
     const std::vector<VkHardwareLoop>& hardwareLoops() const { return hwLoops; }
+    const std::vector<std::vector<VkLoopGuard> >& uniformIfs() const { return uniformIfGuards; }
 
     std::string run() {
         std::string out;
@@ -656,6 +663,7 @@ private:
     std::map<size_t, std::string> insertBefore;   // text emitted before token i
     std::map<std::string, int> knownInts;   // int #defines and int locals that never change
     std::vector<VkHardwareLoop> hwLoops;
+    std::vector<std::vector<VkLoopGuard> > uniformIfGuards;
     bool vertexStage;
     std::string retType;
     bool voidFunc;
@@ -790,6 +798,81 @@ private:
             for (size_t k = loops[a].condSemi1 + 1; k < loops[a].condSemi2; ++k) removed[k] = true;
             insertBefore[loops[a].condSemi2] += " " + var + " < b360_loop" + intText((int)hwLoops.size());
             hwLoops.push_back(hl);
+        }
+    }
+
+    // "if (u > 0.5 && ...) { ... }" in effect() without an else or a return,
+    // every term a uniform compared with a number (conditionGuards): its
+    // guards, and with drop, the whole statement left out. One inside
+    // another is the outer's. (Only effect(): code outside it may be the
+    // vertex stage's, which the preprocessor leaves out here.)
+    void markUniformIfs(bool drop) {
+        size_t n = toks.size(), skipTo = 0, effectB = n, effectE = n;
+        for (size_t i = 0; i < n && effectB == n; ++i) {
+            if (toks[i].kind != TK_IDENT || toks[i].preproc || toks[i].text != "effect") continue;
+            size_t open = nextSig(toks, i + 1, n);
+            if (open >= n || toks[open].text != "(") continue;
+            size_t brace = nextSig(toks, matchParen(toks, open, n) + 1, n);
+            if (brace >= n || toks[brace].text != "{") continue;
+            effectB = brace;
+            effectE = matchBrace(brace, n);
+        }
+        for (size_t i = effectB; i < effectE; ++i) {
+            if (i < skipTo || toks[i].kind != TK_IDENT || toks[i].preproc || toks[i].text != "if" ||
+                prevSigIsDot(i))
+                continue;
+            size_t open = nextSig(toks, i + 1, n);
+            if (open >= n || toks[open].text != "(") continue;
+            size_t close = matchParen(toks, open, n);
+            size_t body = nextSig(toks, close + 1, n);
+            if (body >= n || toks[body].text != "{") continue;
+            size_t end = matchBrace(body, n);
+            size_t after = nextSig(toks, end + 1, n);
+            if (end >= n || (after < n && toks[after].text == "else")) continue;
+            bool returns = false;
+            for (size_t k = body; k < end && !returns; ++k) returns = toks[k].text == "return";
+            if (returns) continue;
+            std::vector<VkLoopGuard> terms;
+            if (!conditionGuards(open + 1, close, terms)) continue;
+            uniformIfGuards.push_back(terms);
+            if (drop)
+                for (size_t k = i; k <= end; ++k) removed[k] = true;
+            skipTo = end + 1;
+        }
+    }
+
+    // "float x = 0.;" (or number, with a precision word before it) in a
+    // function, never assigned again outside what's left out: const, so
+    // glslang folds it (offset_l and offset_r once CRT's glitch if is gone).
+    void markConstFloats() {
+        size_t n = toks.size();
+        int depth = 0;
+        for (size_t i = 0; i < n; ++i) {
+            const Token& t = toks[i];
+            if (t.preproc || isTrivia(t) || removed[i]) continue;
+            if (t.kind == TK_PUNCT) {
+                if (t.text == "{") ++depth;
+                else if (t.text == "}") --depth;
+                continue;
+            }
+            if (depth == 0 || t.kind != TK_IDENT) continue;
+            size_t prev = i;
+            while (prev > 0 && isTrivia(toks[prev - 1])) --prev;
+            if (prev == 0) continue;
+            const std::string& p = toks[prev - 1].text;
+            if (p != "{" && p != ";" && p != "}") continue;
+            size_t ty = i;
+            if (t.text != "float" && t.text != "number") ty = nextSig(toks, i + 1, n);
+            if (ty >= n || (toks[ty].text != "float" && toks[ty].text != "number")) continue;
+            size_t name = nextSig(toks, ty + 1, n);
+            size_t eq = nextSig(toks, name + 1, n);
+            size_t num = nextSig(toks, eq + 1, n);
+            size_t semi = nextSig(toks, num + 1, n);
+            if (semi >= n || toks[name].kind != TK_IDENT || toks[eq].text != "=" || toks[num].kind != TK_NUMBER ||
+                toks[semi].text != ";" || assignedAfter(toks[name].text, semi))
+                continue;
+            insertBefore[i] += "const ";
+            i = semi;
         }
     }
 
@@ -1014,7 +1097,7 @@ private:
     bool assignedIn(const std::string& name, size_t from, size_t to) const {
         size_t n = to < toks.size() ? to : toks.size();
         for (size_t k = from; k < n; ++k) {
-            if (toks[k].kind != TK_IDENT || toks[k].text != name || prevSigIsDot(k)) continue;
+            if (removed[k] || toks[k].kind != TK_IDENT || toks[k].text != name || prevSigIsDot(k)) continue;
             size_t a = nextSig(toks, k + 1, n);
             size_t b = a < n ? a + 1 : n;
             if (a < n && toks[a].text == "=" && !(b < n && toks[b].text == "=")) return true;
@@ -1100,7 +1183,7 @@ private:
     void emitRange(size_t b, size_t e, std::string& out) {
         for (size_t i = b; i < e && i < toks.size(); ++i) {
             const Token& t = toks[i];
-            if (!insertBefore.empty()) {
+            if (!insertBefore.empty() && !removed[i]) {
                 std::map<size_t, std::string>::const_iterator ins = insertBefore.find(i);
                 if (ins != insertBefore.end()) out += ins->second;
             }
@@ -1158,12 +1241,6 @@ private:
                 // xost has no atan2 (GLSL.std.450 Atan2).
                 usesAtan2 = true;
                 out += "b360_atan2";
-                continue;
-            }
-            if (call && (t.text == "sin" || t.text == "cos" || t.text == "tan")) {
-                // xost's sin and cos are the bare hardware ops, right only
-                // from -pi to pi (the prelude's b360_wrap).
-                out += "b360_" + t.text;
                 continue;
             }
             if (!call && isVkReserved(t.text)) {
@@ -1399,8 +1476,38 @@ void vulkanUniformLayout(const LoveShaderInfo& info, std::vector<int>& offsets, 
     blockBytes = (at + 15) & ~15;
 }
 
+// Whether effect()'s fourth parameter (screen_coords) is read in its body.
+bool effectReadsScreenCoords(const std::vector<Token>& toks) {
+    size_t n = toks.size();
+    for (size_t i = 0; i < n; ++i) {
+        if (toks[i].kind != TK_IDENT || toks[i].preproc || toks[i].text != "effect") continue;
+        size_t open = nextSig(toks, i + 1, n);
+        if (open >= n || toks[open].text != "(") continue;
+        size_t close = matchParen(toks, open, n);
+        size_t brace = nextSig(toks, close + 1, n);
+        if (brace >= n || toks[brace].text != "{") continue;
+        // The last identifier before ')' names the fourth parameter.
+        size_t name = n;
+        int commas = 0;
+        for (size_t k = open + 1; k < close; ++k) {
+            if (toks[k].text == ",") ++commas;
+            else if (commas == 3 && toks[k].kind == TK_IDENT) name = k;
+        }
+        if (name == n) return true;
+        int depth = 0;
+        for (size_t k = brace; k < n; ++k) {
+            if (toks[k].kind == TK_PUNCT && toks[k].text == "{") ++depth;
+            else if (toks[k].kind == TK_PUNCT && toks[k].text == "}" && --depth == 0) break;
+            else if (toks[k].kind == TK_IDENT && toks[k].text == toks[name].text) return true;
+        }
+        return false;
+    }
+    return true;
+}
+
 std::string buildVulkanGLSLStage(const std::string& src, const LoveShaderInfo& info, bool vertexStage,
-                                 std::vector<std::string>* warnings, std::vector<VkHardwareLoop>* loops) {
+                                 std::vector<std::string>* warnings, std::vector<VkHardwareLoop>* loops,
+                                 std::vector<std::vector<VkLoopGuard> >* ifs, bool withoutIfs) {
     std::string full = src;
     full += "\n";
     if (vertexStage && !info.hasPosition) full += kDefaultPosition;
@@ -1408,10 +1515,11 @@ std::string buildVulkanGLSLStage(const std::string& src, const LoveShaderInfo& i
 
     std::vector<Token> toks;
     tokenize(full, toks);
-    VkTranslator tr(toks, info, vertexStage, warnings);
+    VkTranslator tr(toks, info, vertexStage, warnings, withoutIfs);
     std::string body = tr.run();
     const std::vector<VkHardwareLoop>& hw = tr.hardwareLoops();
     if (loops) *loops = hw;
+    if (ifs) *ifs = tr.uniformIfs();
 
     std::vector<int> offsets;
     int blockBytes = 0;
@@ -1423,14 +1531,10 @@ std::string buildVulkanGLSLStage(const std::string& src, const LoveShaderInfo& i
     s += "#define lowp\n#define mediump\n#define highp\n";
     s += "#define number float\n#define Image sampler2D\n#define Texel love_Texel\n";
     s += vertexStage ? "#define love_Texel(s, uv) textureLod(s, uv, 0.0)\n" : "#define love_Texel(s, uv) texture(s, uv)\n";
-    // The angle moved into -pi..pi, where the console's sin and cos are right.
-    s += "#define b360_wrap(x) ((fract((x) * 0.15915494309 + 0.5) - 0.5) * 6.28318530718)\n"
-         "#define b360_sin(x) sin(b360_wrap(x))\n"
-         "#define b360_cos(x) cos(b360_wrap(x))\n"
-         "#define b360_tan(x) tan(b360_wrap(x))\n";
     s += "layout(std140, set = 0, binding = 0) uniform LoveUniforms {\n"
          "    layout(offset = 0) mat4 TransformProjectionMatrix;\n"
-         "    layout(offset = 64) vec4 love_ScreenSize;\n";
+         "    layout(offset = 64) vec4 love_ScreenSize;\n"
+         "    layout(offset = 80) vec4 b360_FragCoordMap;\n";
     for (size_t i = 0; i < info.uniforms.size(); ++i) {
         const UniformInfo& u = info.uniforms[i];
         if (offsets[i] < 0) continue;
@@ -1447,13 +1551,21 @@ std::string buildVulkanGLSLStage(const std::string& src, const LoveShaderInfo& i
     for (size_t k = 0; k < hw.size(); ++k)
         s += "    layout(offset = " + intText(blockBytes + 4 * (int)k) + ") int b360_loop" + intText((int)k) + ";\n";
     s += "};\n";
+    static const char* ops[] = {">", ">=", "<", "<="};
     for (size_t k = 0; k < hw.size(); ++k) {
-        static const char* ops[] = {">", ">=", "<", "<="};
         const VkHardwareLoop& l = hw[k];
         s += "// b360_loop" + intText((int)k) + ": " + intText(l.count - l.start) + " passes";
         for (size_t g = 0; g < l.guards.size(); ++g)
             s += std::string(g ? " &&" : ", none unless") + " " + info.uniforms[l.guards[g].uniform].name + " " +
                  ops[l.guards[g].op] + " " + floatText(l.guards[g].value);
+        s += "\n";
+    }
+    const std::vector<std::vector<VkLoopGuard> >& uifs = tr.uniformIfs();
+    for (size_t k = 0; k < uifs.size(); ++k) {
+        s += std::string("// uniform if") + (withoutIfs ? " (left out):" : ":");
+        for (size_t g = 0; g < uifs[k].size(); ++g)
+            s += std::string(g ? " &&" : "") + " " + info.uniforms[uifs[k][g].uniform].name + " " + ops[uifs[k][g].op] +
+                 " " + floatText(uifs[k][g].value);
         s += "\n";
     }
     if (vertexStage) {
@@ -1498,10 +1610,15 @@ std::string buildVulkanGLSLStage(const std::string& src, const LoveShaderInfo& i
              "}\n";
     } else {
         // Vulkan's gl_FragCoord is in pixels from the top left, at pixel
-        // centres: LÖVE's screen_coords.
+        // centres: LÖVE's screen_coords. b360_FragCoordMap maps a smaller
+        // target's pixels to the full target's (x, y scale, then offset);
+        // only where effect() reads them, as xost then refuses it.
         s += "void main() {\n"
-             "    love_FragOut = effect(VaryingColor, love_MainTex, VaryingTexCoord.st, gl_FragCoord.xy);\n"
-             "}\n";
+             "    love_FragOut = effect(VaryingColor, love_MainTex, VaryingTexCoord.st,\n";
+        s += effectReadsScreenCoords(toks) ? "                          gl_FragCoord.xy * b360_FragCoordMap.xy + "
+                                             "b360_FragCoordMap.zw);\n"
+                                           : "                          gl_FragCoord.xy);\n";
+        s += "}\n";
     }
     return s;
 }

@@ -57,21 +57,31 @@ struct VkHardwareLoop {
 // backend). Interface:
 //   set 0, binding 0: std140 uniform block LoveUniforms, at a dynamic offset:
 //                     mat4 TransformProjectionMatrix, vec4 love_ScreenSize,
-//                     then the shader's uniforms (vulkanUniformLayout), then
-//                     the pixel stage's loop counts, an int each
+//                     vec4 b360_FragCoordMap (screen_coords = gl_FragCoord.xy
+//                     * .xy + .zw, normally (1, 1, 0, 0)), then the shader's
+//                     uniforms (vulkanUniformLayout), then the pixel stage's
+//                     loop counts, an int each
 //   set 0, binding 1: sampler2D love_MainTex
 //   vertex inputs:    location 0 vec2 position, 1 vec4 colour, 2 vec2 texcoord
 // Functions with early returns are rewritten to return once, as xost (the
 // console's shader compiler) inlines only those. loops (pixel stage) gets
 // the hardware loops, in the order of their ints.
+//
+// A pixel stage's ifs whose condition only compares uniforms with numbers
+// (CRT's bloom and glitch) cost every pixel on the console, which runs or
+// skips each arm's instructions but keeps the code around it. ifs, when not
+// NULL, gets each such if's guards (all of an if's must hold for it to run);
+// withoutIfs leaves those ifs out, for a variant drawn while every one of
+// them fails. The variant keeps the block's layout and loop ints.
 std::string buildVulkanGLSLStage(const std::string& src, const LoveShaderInfo& info, bool vertexStage,
-                                 std::vector<std::string>* warnings, std::vector<VkHardwareLoop>* loops = NULL);
+                                 std::vector<std::string>* warnings, std::vector<VkHardwareLoop>* loops = NULL,
+                                 std::vector<std::vector<VkLoopGuard> >* ifs = NULL, bool withoutIfs = false);
 
 // std140 byte offset of each of info.uniforms in LoveUniforms (-1 for
 // samplers), and the block's size. bools and ints are stored as floats.
 // The loop counts follow at blockBytes, 4 bytes apart (vulkanLoopBlockBytes
 // is the size with them).
-enum { VK_BUILTIN_UNIFORM_BYTES = 80 };
+enum { VK_BUILTIN_UNIFORM_BYTES = 96 };
 void vulkanUniformLayout(const LoveShaderInfo& info, std::vector<int>& offsets, int& blockBytes);
 int vulkanLoopBlockBytes(int blockBytes, int loops);
 

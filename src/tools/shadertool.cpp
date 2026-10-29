@@ -1,6 +1,8 @@
 // Host tool: translates LÖVE shaders to HLSL / GLSL for inspection and
 // offline validation.
-//   b360-shadertool hlsl-vs|hlsl-ps|glsl-vs|glsl-ps|vk-vs|vk-ps|uniforms <file.fs>
+//   b360-shadertool hlsl-vs|hlsl-ps|glsl-vs|glsl-ps|vk-vs|vk-ps|vk-ps-noifs|uniforms <file.fs>
+// vk-ps-noifs is the Vulkan pixel stage without its uniform ifs (the variant
+// drawn while they all fail); it prints nothing for a shader without any.
 #include "../gfx/shader_translate.h"
 
 #include <stdio.h>
@@ -9,7 +11,7 @@
 
 int main(int argc, char** argv) {
     if (argc < 3) {
-        fprintf(stderr, "usage: %s hlsl-vs|hlsl-ps|glsl-vs|glsl-ps|vk-vs|vk-ps|uniforms file\n", argv[0]);
+        fprintf(stderr, "usage: %s hlsl-vs|hlsl-ps|glsl-vs|glsl-ps|vk-vs|vk-ps|vk-ps-noifs|uniforms file\n", argv[0]);
         return 2;
     }
     FILE* f = fopen(argv[2], "rb");
@@ -33,7 +35,11 @@ int main(int argc, char** argv) {
     else if (mode == "glsl-ps") out = gfx::buildGLSLStage(src, info, false);
     else if (mode == "vk-vs") out = gfx::buildVulkanGLSLStage(src, info, true, &warnings);
     else if (mode == "vk-ps") out = gfx::buildVulkanGLSLStage(src, info, false, &warnings);
-    else if (mode == "uniforms") {
+    else if (mode == "vk-ps-noifs") {
+        std::vector<std::vector<gfx::VkLoopGuard> > ifs;
+        out = gfx::buildVulkanGLSLStage(src, info, false, &warnings, NULL, &ifs, true);
+        if (ifs.empty()) out.clear();
+    } else if (mode == "uniforms") {
         for (size_t i = 0; i < info.uniforms.size(); ++i)
             printf("%s type=%d comps=%d array=%d\n", info.uniforms[i].name.c_str(), (int)info.uniforms[i].type,
                    info.uniforms[i].components, info.uniforms[i].arraySize);

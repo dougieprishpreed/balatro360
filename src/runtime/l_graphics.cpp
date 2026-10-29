@@ -1787,6 +1787,15 @@ int w_startProfiler(lua_State* L) {
     return 0;
 }
 
+// Extension: love.graphics._b360_setHalfResolution(shader, on): draw it at half
+// the target's width and height (gfx::Shader::halfRes).
+int w_setHalfResolution(lua_State* L) {
+    ShaderObject* s = checkShader(L, 1);
+    flush();
+    s->sh->halfRes = lua_toboolean(L, 2) != 0;
+    return 0;
+}
+
 // Extension: love.graphics._b360_gpuProfile(seconds): the GPU time of each
 // draw of one frame every so often, in the log. False if the renderer can't.
 int w_gpuProfile(lua_State* L) {
@@ -1873,7 +1882,8 @@ const luaL_Reg kFuncs[] = {
     {"getImageFormats", w_trueTable}, {"getTextureTypes", w_trueTable}, {"captureScreenshot", w_none},
     {"_b360_setSafeArea", w_setSafeArea}, {"_b360_setFrameRate", w_setFrameRate},
     {"_b360_getFrameInfo", w_getFrameInfo}, {"_b360_startProfiler", w_startProfiler},
-    {"_b360_gpuProfile", w_gpuProfile}, {"setStencilTest", w_none}, {"stencil", w_none}, {"flushBatch", w_none}, {"discard", w_none},
+    {"_b360_gpuProfile", w_gpuProfile}, {"_b360_setHalfResolution", w_setHalfResolution},
+    {"setStencilTest", w_none}, {"stencil", w_none}, {"flushBatch", w_none}, {"discard", w_none},
     {NULL, NULL}};
 
 }  // namespace

@@ -46,11 +46,14 @@ def main():
 
     failed = 0
     for shader in shaders:
-        for mode, stage in (("vk-vs", "vert"), ("vk-ps", "frag")):
+        # The pixel stage without its uniform ifs too, where it has any (the variant drawn while they fail).
+        for mode, stage in (("vk-vs", "vert"), ("vk-ps", "frag"), ("vk-ps-noifs", "noifs.frag")):
             name = f"{shader.stem}.{stage}"
             glsl = work / name
             spv = work / (name + ".spv")
             result = subprocess.run([args.tool, mode, str(shader)], capture_output=True, text=True)
+            if mode == "vk-ps-noifs" and not result.stdout:
+                continue
             glsl.write_text(result.stdout)
             for line in result.stderr.splitlines():
                 print(f"{name}: {line}")
@@ -69,8 +72,9 @@ def main():
             print(f"ok   {name}: {len(container)} bytes, {len(manifest)} literals/loops, {len(resources)} resources")
             if args.simulate:
                 stock = stage == "vert" and "vec4 position" not in shader.read_text()
+                full = work / f"{shader.stem}.frag.spv" if mode == "vk-ps-noifs" else None
                 problems = simulate_stage(native, XSDK_REGISTERS, spv.read_bytes(), glsl.read_text(), stage,
-                                          args.simulate, stock)
+                                          args.simulate, stock, full.read_bytes() if full else None)
                 for line in problems:
                     print(f"FAIL {name}: {line}")
                 failed += bool(problems)
@@ -81,11 +85,13 @@ def main():
 W, H = 1280.0, 720.0
 
 
-def simulate_stage(native, registers, spv, glsl, stage, count, stock_position):
+def simulate_stage(native, registers, spv, glsl, stage, count, stock_position, full_spv=None):
     """What's wrong with a stage on xost's simulator: optimised and plain builds that disagree for random inputs
     (xost's optimiser has dropped a second length() before), and, for the stock position(), oPos other than M * v
     (xost has multiplied by a matrix parameter's transpose). The block holds random floats past the built-ins and
-    each loop's count from the translator's comment; textures are a smooth pattern of their coordinates."""
+    each loop's count from the translator's comment; textures are a smooth pattern of their coordinates. For a
+    variant without its uniform ifs, full_spv is the whole stage: with each if's first term made to fail, the two
+    must agree."""
     import math
     import random
     import re
@@ -95,10 +101,12 @@ def simulate_stage(native, registers, spv, glsl, stage, count, stock_position):
 
     rng = random.Random(1)
     block = bytearray(4096)
-    struct.pack_into("<20f", block, 0, 2 / W, 0, 0, 0, 0, 2 / H, 0, 0, 0, 0, 1, 0, -1, -1, 0, 1, W, H, 1, 0)
+    # The built-ins: projection, love_ScreenSize, b360_FragCoordMap (src/gfx/shader_translate.h).
+    struct.pack_into("<24f", block, 0, 2 / W, 0, 0, 0, 0, 2 / H, 0, 0, 0, 0, 1, 0, -1, -1, 0, 1, W, H, 1, 0,
+                     1, 1, 0, 0)
     for m in re.finditer(r"layout\(offset = (\d+)\) (\w+) (\w+)(\[(\d+)\])?;", glsl):
         offset, kind, name = int(m.group(1)), m.group(2), m.group(3)
-        if offset < 80:
+        if offset < 96:
             continue
         if kind == "int":
             passes = re.search(r"// %s: (\d+) passes" % name, glsl)
@@ -107,9 +115,15 @@ def simulate_stage(native, registers, spv, glsl, stage, count, stock_position):
         floats = {"float": 1, "vec2": 2, "vec3": 3, "vec4": 4, "mat2": 8, "mat3": 12, "mat4": 16}.get(kind, 4)
         for i in range(floats * int(m.group(5) or 1)):
             struct.pack_into("<f", block, offset + 4 * i, 0.0 if stock_position else rng.uniform(0.0, 1.0))
+    if full_spv:
+        offsets = {m.group(2): int(m.group(1)) for m in re.finditer(r"layout\(offset = (\d+)\) \w+ (\w+);", glsl)}
+        for m in re.finditer(r"// uniform if \(left out\): (\w+) ([<>]=?) (\S+)", glsl):
+            name, op, value = m.group(1), m.group(2), float(m.group(3))
+            struct.pack_into("<f", block, offsets[name], value - 1.0 if op[0] == ">" else value + 1.0)
 
-    def build(optimize):
-        container, manifest, resources = native.compile_spirv(spv, registers.pixel, registers.vertex, optimize)
+    def build(optimize, code=None):
+        container, manifest, resources = native.compile_spirv(code or spv, registers.pixel, registers.vertex,
+                                                              optimize)
         consts = {m[0]: list(m[1]) for m in manifest if isinstance(m, tuple) and isinstance(m[0], int)}
         loops = {}
         for m in manifest:
@@ -133,7 +147,8 @@ def simulate_stage(native, registers, spv, glsl, stage, count, stock_position):
         return max(abs(p - q) if math.isfinite(p) and math.isfinite(q) else float(repr(p) != repr(q))
                    for p, q in zip(a, b))
 
-    builds = (build(True), build(False))
+    # Optimised against plain; or, for a variant, the whole stage against it.
+    builds = (build(True, full_spv), build(True)) if full_spv else (build(True), build(False))
     problems, mismatches, worst = [], 0, 0.0
     for _ in range(count):
         if stage == "vert":
@@ -160,7 +175,8 @@ def simulate_stage(native, registers, spv, glsl, stage, count, stock_position):
         worst = max(worst, d)
         mismatches += d > 1.0 / 255
     if mismatches > count // 100:
-        problems.append(f"optimised and plain builds differ for {mismatches} of {count} inputs (by up to {worst:.3g})")
+        what = "the whole stage and the variant" if full_spv else "optimised and plain builds"
+        problems.append(f"{what} differ for {mismatches} of {count} inputs (by up to {worst:.3g})")
     return problems
 
 

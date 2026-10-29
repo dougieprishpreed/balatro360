@@ -76,9 +76,14 @@ protected:
 
 class Shader {
 public:
+    Shader() : halfRes(false) {}
     virtual ~Shader() {}
     // The file it came from without folder or extension ("CRT"), for logs.
     std::string name;
+    // Draw at half the width and height of the target, scaled up nearest, for
+    // full-screen effects made of blocks of two pixels or more anyway. A
+    // backend may ignore it (only the Vulkan one uses it).
+    bool halfRes;
     // Uniforms declared by the shader source (parsed by the core).
     std::vector<UniformInfo> uniforms;
     // index refers to uniforms[]. values holds the elements one after the
