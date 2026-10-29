@@ -11,6 +11,12 @@
 #include "source_stamp.h"
 #endif
 
+// The release version, from tools/release/VERSION (the Makefile and the xSDK
+// build pass it).
+#if !defined(B360_VERSION)
+#define B360_VERSION "dev"
+#endif
+
 #define B360_SOURCE_COMMIT "$Format:%h$"
 #define B360_SOURCE_DATE "$Format:%cI$"
 

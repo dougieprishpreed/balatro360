@@ -114,7 +114,7 @@ int run(int argc, char** argv) {
     const char* commit = B360_SOURCE_COMMIT[0] == '$' ? "unknown" : B360_SOURCE_COMMIT;
     const char* date = B360_SOURCE_DATE[0] == '$' ? "" : B360_SOURCE_DATE;
 #endif
-    plat::log("Balatro360 runtime starting (%s), source %s %s, built %s %s", plat::osName(), commit, date,
+    plat::log("Balatro360 %s starting (%s), source %s %s, built %s %s", B360_VERSION, plat::osName(), commit, date,
               __DATE__, __TIME__);
     if (!initGraphics(cfg.width, cfg.height)) {
         plat::fatal("Could not initialise graphics");

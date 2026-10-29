@@ -77,6 +77,11 @@ A `b360_config.lua` in the save folder works like on the console, e.g.
 `return { B360_LOG_PERF = 3, B360_PROFILE = 10 }` (numbers are the report
 intervals in seconds). Host runs are unpaced unless `B360_FPS` is set.
 
+The first-start unpack works as on the console: with `B360_GAME_DIR` set to
+a folder that isn't there yet, a copy of `Balatro.exe` in its parent folder
+is unpacked into it, then deleted. Script frames count from the game's main
+loop, so screenshots don't see the loading bar.
+
 `tests/pacing` checks the 60/30 switching against the emulated display:
 
 ```

@@ -3,9 +3,11 @@ name: xSDK build
 # Builds default.xex with the open xSDK toolchain at the dependency revisions
 # pinned in tools/xsdk/bootstrap.sh. No game data is involved. Artifacts:
 #   balatro360-xex      default.xex, its licences and checksum
-#   balatro360-release  Balatro360-v<tools/release/VERSION>.zip, the release:
-#                       the XEX, the converter that copies the player's own
-#                       game files over, README.txt (tools/package_release.py)
+#   balatro360-release  the release, packed for the Homebrew App Store, at
+#                       version <tools/release/VERSION> (tools/package_release.py):
+#                       balatro360-<version>.zip, the package the store installs;
+#                       Balatro360-Xbox360-<version>.zip, for installing by hand;
+#                       balatro360-<version>.json, the app's catalogue entry
 
 on:
   push:
@@ -66,10 +68,11 @@ jobs:
           cp build-xsdk/output/licenses/* dist/licenses/
           cp README.md dist/README.md
           cp THIRD_PARTY.md dist/THIRD_PARTY.md
+          cp LICENSE dist/LICENSE.txt
           (cd dist && sha256sum default.xex | tee default.xex.sha256)
 
-      - name: Package the release zip
-        run: python3 tools/package_release.py dist --version "$(tr -d '[:space:]' < tools/release/VERSION)" --out release
+      - name: Package the release
+        run: python3 tools/package_release.py dist --xsdk "$PWD/build-xsdk/deps/xsdk" --out release
 
       - uses: actions/upload-artifact@v4
         with:
@@ -79,4 +82,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: balatro360-release
-          path: release/*.zip
+          path: |
+            release/*.zip
+            release/*.json

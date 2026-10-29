@@ -11,36 +11,28 @@ toolchain and [vulkan4xenon](https://github.com/xenosworks/vulkan4xenon).
 ## What you need
 
 * An Xbox 360 that can run homebrew (RGH or ABadAvatar)
-* Balatro for Windows from Steam
-* A Windows 10 or 11 PC (on a Mac or Linux, see [below](#on-a-mac-or-linux))
-* A USB drive or the console's hard drive, with about 100 MB free
+* Balatro for PC from Steam (Windows, or Mac)
+* A way to copy files to the console: FTP, or a USB drive
+* About 150 MB free on the console's hard drive or the USB drive
 
 ## Install
 
-1. Download the latest `Balatro360-v*.zip` from
+1. Download the latest `Balatro360-Xbox360-*.zip` from
    [Releases](https://github.com/dougieprishpreed/balatro360/releases) and
    extract it.
-2. Double-click **Convert Balatro.bat** and choose `Balatro.exe`.
+2. Copy its `apps` folder to the root of the console's hard drive (`Hdd1`
+   over FTP). If there's an `apps` folder there already, copy `balatro360`
+   into it instead. A USB drive works too: copy the `balatro360` folder
+   anywhere on it.
+3. Copy `Balatro.exe` into that `balatro360` folder, beside `default.xex`.
    To find it, right-click Balatro in Steam and choose
-   **Manage > Browse local files**.
-3. Copy the **Balatro360** folder to your USB drive or the console's hard
-   drive, for example to `Games\Balatro360`.
-4. On the console, launch `default.xex` from that folder.
+   **Manage > Browse local files**. On a Mac, `Balatro.love` from inside
+   `Balatro.app` works instead.
+4. On the console, start `default.xex`.
 
-The first launch takes a little longer while the console prepares the game's
-graphics. Later launches are quicker.
-
-### On a Mac or Linux
-
-The zip's `converter` folder also has a Python 3 script that does the same
-job:
-
-```
-python3 converter/prepare_game.py /path/to/Balatro.exe Balatro360
-```
-
-Or open `Balatro.exe` with 7-Zip and extract everything except the `.dll`
-files into `Balatro360/game`, so that `Balatro360/game/main.lua` exists.
+The first start takes longer: Balatro360 takes the game's files out of
+`Balatro.exe`, deletes it, and prepares the game's graphics. Later starts are
+quicker.
 
 ## Playing
 
@@ -52,21 +44,21 @@ files into `Balatro360/game`, so that `Balatro360/game/main.lua` exists.
 
 ## Saves
 
-Your saves are in `Balatro360\save` on the console. They use the same format
+Your saves are in `balatro360\save` on the console. They use the same format
 as the PC version, so you can copy your profiles (the `1`, `2` and `3`
 folders) between the two. On Windows, the PC saves are in `%AppData%\Balatro`.
 
 ## Updating
 
-* **New Balatro360 version:** copy the new `Balatro360` folder over the old
+* **New Balatro360 version:** copy the new `balatro360` folder over the old
   one on the console. Your game files and saves stay where they are.
-* **New Balatro version:** run the converter again, replace the `game` folder
-  on the console with the new one, and delete the `cache` folder.
+* **New Balatro version:** copy the new `Balatro.exe` beside `default.xex`
+  and start Balatro360 again.
 
 ## Settings
 
 Most settings are in Balatro's own options menu. For a few extras, create a
-text file called `b360_config.lua` in `Balatro360\game` on the console:
+text file called `b360_config.lua` in `balatro360\game` on the console:
 
 ```lua
 return {
@@ -80,14 +72,16 @@ Keep only the lines you want.
 
 ## Problems?
 
-* **The first launch is slow.** That's normal: the console is preparing the
-  graphics, and it only does this once.
+* **"Balatro360 needs your own copy of Balatro."** `Balatro.exe` isn't beside
+  `default.xex`, or it isn't Balatro's. Copy it there and start again.
+* **The first start is slow.** That's normal: the console is preparing the
+  game, and it only does this once.
 * **The edges of the picture are cut off.** Set `B360_SAFE_AREA` (see
   [Settings](#settings)).
 * **It doesn't run in Xenia.** Balatro360 only runs on a real console.
 * **Anything else:** please
   [open an issue](https://github.com/dougieprishpreed/balatro360/issues) and
-  attach `b360.log` and `default.log` from the `Balatro360` folder.
+  attach `b360.log` and `default.log` from the `balatro360` folder.
 
 ## Credits
 
@@ -97,8 +91,8 @@ repository contains none of the game's files.
 
 Balatro360 is built with the open [xSDK](https://github.com/xenosworks/xsdk)
 toolchain and [vulkan4xenon](https://github.com/xenosworks/vulkan4xenon).
-The other open-source code it uses is listed in
-[THIRD_PARTY.md](THIRD_PARTY.md).
+Its own code is under the [MIT licence](LICENSE); the other open-source code
+it uses is listed in [THIRD_PARTY.md](THIRD_PARTY.md).
 
 **Developers:** building, how the port works and all the testing options are
 in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).

@@ -1,6 +1,7 @@
 // love.filesystem
 #include "modules.h"
 #include "filesystem.h"
+#include "game_unpack.h"
 
 #include <string.h>
 
@@ -198,7 +199,29 @@ int w_getRealDirectory(lua_State* L) {
     return 1;
 }
 
+// Balatro360 extension for boot.lua: unpacks a Balatro.exe beside the
+// executable for about `seconds` (game_unpack.h). Returns the progress, 0 to 1
+// (1 once done); false if there's nothing to unpack; nil and the error if it
+// failed.
+int w_unpackGame(lua_State* L) {
+    double progress = 0.0;
+    std::string error;
+    unpack::Result r = unpack::step(luaL_optnumber(L, 1, 0.05), progress, error);
+    if (r == unpack::NOTHING) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    if (r == unpack::FAILED) {
+        lua_pushnil(L);
+        lua_pushstring(L, error.c_str());
+        return 2;
+    }
+    lua_pushnumber(L, progress);
+    return 1;
+}
+
 const luaL_Reg kFuncs[] = {
+    {"_b360_unpackGame", w_unpackGame},
     {"getInfo", w_getInfo},
     {"read", w_read},
     {"write", w_write},

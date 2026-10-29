@@ -1,11 +1,15 @@
 # Third-party code
 
+Balatro360's own code is under the MIT licence ([LICENSE](LICENSE)). It
+uses:
+
 | Component | Location | License |
 |---|---|---|
 | Lua 5.1.5 | `third_party/lua` | MIT (see `third_party/lua/COPYRIGHT`) |
 | LuaBitOp 1.0.2 | `third_party/luabitop` | MIT (header of `bit.c`) |
 | stb_image, stb_image_write, stb_truetype, stb_vorbis | `third_party/stb` | MIT or public domain (see `third_party/stb/LICENSE`) |
 | miniz 3.0.2 | `third_party/miniz` | MIT (see `third_party/miniz/LICENSE`) |
+| [font8x8](https://github.com/dhepper/font8x8) `font8x8_basic`, the printable characters | `GLYPHS` in `src/lua/boot.lua` | public domain |
 
 The xSDK build also links code fetched at pinned revisions by
 `tools/xsdk/bootstrap.sh` (none of it is in this repository); its

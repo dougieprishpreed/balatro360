@@ -45,20 +45,37 @@ the `xdk` branch has the last of it).
 
 ## Building
 
-GitHub Actions builds `default.xex` and the release zip on every push to
-`main` ([xsdk-build.yml](../.github/workflows/xsdk-build.yml); artifacts
+GitHub Actions builds `default.xex` and the release on every push to `main`
+([xsdk-build.yml](../.github/workflows/xsdk-build.yml); artifacts
 `balatro360-xex` and `balatro360-release`).
 
 To build it yourself on Linux or in WSL: `tools/xsdk/bootstrap.sh` once, then
-`tools/xsdk/build.sh` ([BUILDING_XSDK.md](BUILDING_XSDK.md)). Then prepare a
-console folder from your own game with Python 3:
+`tools/xsdk/build.sh` ([BUILDING_XSDK.md](BUILDING_XSDK.md)). Then put it in a
+console folder with your own `Balatro.exe` beside it, which the first start
+unpacks, or prepare the folder on the PC with Python 3:
 
 ```
 python tools/prepare_game.py "path\to\Balatro.exe" out\Balatro360 --xex build-xsdk/output/default.xex
 ```
 
-`python tools/package_release.py <artifact> --version 1.0.0` makes the
-release zip from the `balatro360-xex` artifact.
+## Releasing
+
+The version is `tools/release/VERSION`, `major.minor.build.fix`; the XEX
+carries it, and the Homebrew App Store updates an app when it goes up, so
+raise it for each release. `tools/package_release.py` makes the release from
+the `balatro360-xex` artifact (the workflow runs it; artifact
+`balatro360-release`):
+
+| File | What it is |
+|---|---|
+| `balatro360-<version>.zip` | the package the store installs into `hdd:\apps\balatro360\`, made by xsdk's `tools/store_catalogue.py pack`; upload it exactly as it is |
+| `Balatro360-Xbox360-<version>.zip` | for installing by hand: `apps\balatro360\` and `README.txt` (`tools/release/README.txt`) |
+| `balatro360-<version>.json` | the app's entry for [xenosworks/homebrew-app-catalogue](https://github.com/xenosworks/homebrew-app-catalogue)'s `catalogue.json`, with the package's size and hashes (from `tools/release/store_entry.json`) |
+
+Tag the release `v<version>` and upload both zips: the entry gives the
+package's address under that tag. The pull request to the catalogue adds the
+entry and a 1280x720 screenshot, `shots/balatro360.png`; xenosworks signs
+the catalogue.
 
 ## All settings
 
@@ -102,7 +119,7 @@ return {
 | Path | Purpose |
 |---|---|
 | `default.xex` | the runtime |
-| `game\` | game files from your Balatro.exe (the converter or `tools/prepare_game.py`) |
+| `game\` | game files from your Balatro.exe (unpacked on the first start, or `tools/prepare_game.py`) |
 | `save\` | profiles and settings (same format as the PC version, so PC saves can be copied over) |
 | `cache\` | the shaders compiled on the first start (delete it after updating the game) |
 | `b360.log` | runtime log; please include it in bug reports |
@@ -122,7 +139,7 @@ src/platform/       OS layer: xsdk/ (360), posix/ (Linux), xbox360/ (old XDK bui
 src/lua/            boot scripts embedded into the executable
 third_party/        Lua 5.1.5, LuaBitOp, stb, miniz (all permissively licensed)
 tools/              prepare_game.py, package_release.py; xsdk/: the xSDK build;
-                    release/: the converter and the release README
+                    release/: VERSION, the release README, the store entry
 build/xsdk/         CMake project for the xSDK build
 build/xbox360/      Visual Studio 2010 solution for the old XDK build
 docs/               build, architecture and testing notes

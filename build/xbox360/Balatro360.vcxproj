@@ -426,6 +426,7 @@
       <FloatingPointModel>Strict</FloatingPointModel>
     </ClCompile>
     <ClCompile Include="..\..\src\runtime\l_event.cpp" />
+    <ClCompile Include="..\..\src\runtime\game_unpack.cpp" />
     <ClCompile Include="..\..\src\runtime\l_filesystem.cpp" />
     <ClCompile Include="..\..\src\runtime\l_graphics.cpp" />
     <ClCompile Include="..\..\src\runtime\l_joystick.cpp" />
@@ -452,6 +453,7 @@
     <ClInclude Include="..\..\src\runtime\embedded_lua.h" />
     <ClInclude Include="..\..\src\runtime\event.h" />
     <ClInclude Include="..\..\src\runtime\filesystem.h" />
+    <ClInclude Include="..\..\src\runtime\game_unpack.h" />
     <ClInclude Include="..\..\src\runtime\font.h" />
     <ClInclude Include="..\..\src\runtime\luax.h" />
     <ClInclude Include="..\..\src\runtime\modules.h" />

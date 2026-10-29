@@ -7,9 +7,11 @@ binutils, newlib) and its GPU layer, with rendering through
 subset for Xenos. No Microsoft XDK, Visual Studio or Windows build is
 involved, so GitHub Actions builds it on every push to `main`
 (`.github/workflows/xsdk-build.yml`): artifact `balatro360-xex` is the XEX
-and its licences, `balatro360-release` the release zip
-(`tools/package_release.py`: the XEX, the converter in `tools/release/` and
-its README, version from `tools/release/VERSION`).
+and its licences, `balatro360-release` the release, packed for the
+[Homebrew App Store](https://github.com/xenosworks/homebrew-app-catalogue)
+by `tools/package_release.py`: the store's package, a zip for installing by
+hand and the app's catalogue entry. The version is `tools/release/VERSION`,
+which the XEX carries too.
 
 Like every xSDK title it runs on consoles that run unsigned code (RGH/JTAG,
 or an exploit such as ABadAvatar). **Xenia doesn't run xSDK titles**; test on

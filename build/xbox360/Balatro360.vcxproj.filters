@@ -114,6 +114,9 @@
     <ClCompile Include="..\..\src\runtime\l_filesystem.cpp">
       <Filter></Filter>
     </ClCompile>
+    <ClCompile Include="..\..\src\runtime\game_unpack.cpp">
+      <Filter></Filter>
+    </ClCompile>
     <ClCompile Include="..\..\src\runtime\l_graphics.cpp">
       <Filter></Filter>
     </ClCompile>
@@ -183,6 +186,9 @@
       <Filter></Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\runtime\filesystem.h">
+      <Filter></Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\runtime\game_unpack.h">
       <Filter></Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\runtime\font.h">

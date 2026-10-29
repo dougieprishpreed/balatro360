@@ -111,13 +111,20 @@ embedded `boot.lua`:
 1. `common.lua`, which runs in every Lua state including `love.thread`
    workers: `require` searches the game folder through `love.filesystem`;
    stub `https`/`luasteam` modules.
-2. `conf.lua` / `love.conf`, like LÖVE.
-3. `hooks.lua`: wraps `require` so code can run right after specific game
+2. On the first start, the player's `Balatro.exe` (or `Balatro.love`) beside
+   the executable is unpacked into the game folder and then deleted
+   (`src/runtime/game_unpack.cpp`, a step at a time from `boot.lua`), behind
+   a copy of Balatro's own loading bar (its `boot_timer()`), which fills to
+   the game's first step (0.1). `main.lua` is written last. Without a game
+   folder, a screen says what to copy, in a public-domain 8x8 font, since the
+   game's font is missing too.
+3. `conf.lua` / `love.conf`, like LÖVE.
+4. `hooks.lua`: wraps `require` so code can run right after specific game
    modules load. It wraps `Game.init` (after `game.lua` loads) to set the
    game's own console feature flags (`F_VIDEO_SETTINGS = false`,
    `F_HIDE_BG = true`, rumble, the gamertag in the main menu, ...) and
    applies the optional `b360_config.lua`. No game files are modified.
-4. `main.lua` and `love.run()`, with LÖVE 11's error handler flow (Balatro's
+5. `main.lua` and `love.run()`, with LÖVE 11's error handler flow (Balatro's
    own `love.errhand` is used for its error screen).
 
 ## Graphics

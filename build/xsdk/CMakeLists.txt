@@ -16,6 +16,9 @@ set(B360_GIT_DATE "" CACHE STRING "Commit date")
 set(B360_TITLE_ID "0x42333630" CACHE STRING "The XEX's title ID ('B360')")
 
 get_filename_component(ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+# The version, in the XEX too (the Homebrew App Store compares it): major.minor.build.fix.
+file(STRINGS "${ROOT}/tools/release/VERSION" B360_VERSION LIMIT_COUNT 1)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${ROOT}/tools/release/VERSION")
 
 # glslang compiles the game's shaders to SPIR-V on the console: GLSL only.
 set(ENABLE_OPT OFF CACHE BOOL "" FORCE)
@@ -64,6 +67,7 @@ set_source_files_properties("${ROOT}/src/gfx/vulkan/glsl_spirv.cpp" PROPERTIES C
 set_source_files_properties("${ROOT}/third_party/miniz/miniz.c" "${ROOT}/third_party/miniz/miniz_tdef.c"
     "${ROOT}/third_party/miniz/miniz_tinfl.c" PROPERTIES COMPILE_OPTIONS "-std=gnu99;-w")
 
+target_compile_definitions(balatro360 PRIVATE B360_VERSION="${B360_VERSION}")
 if(B360_GIT_COMMIT)
     target_compile_definitions(balatro360 PRIVATE B360_GIT_COMMIT="${B360_GIT_COMMIT}" B360_GIT_DATE="${B360_GIT_DATE}")
 endif()
@@ -90,4 +94,4 @@ target_link_libraries(balatro360 PRIVATE
 set_property(TARGET balatro360 APPEND PROPERTY LINK_DEPENDS "${VULKAN4XENON}/build/libvulkan4xenon.a")
 # xSDK's import stubs have no .note.GNU-stack; the console has no such thing.
 target_link_options(balatro360 PRIVATE "-Wl,--gc-sections,--no-warn-execstack,-Map,${CMAKE_CURRENT_BINARY_DIR}/balatro360.map")
-xsdk_add_xex(balatro360 TITLE_ID ${B360_TITLE_ID} NAME "Balatro360")
+xsdk_add_xex(balatro360 TITLE_ID ${B360_TITLE_ID} NAME "Balatro360" VERSION ${B360_VERSION})

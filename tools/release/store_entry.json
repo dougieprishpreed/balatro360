@@ -1,0 +1,13 @@
+{
+  "id": "balatro360",
+  "name": "Balatro360",
+  "author": "dougieprishpreed",
+  "category": "ports",
+  "sentence": "The poker roguelike, run from your own copy of the PC game at 1280x720.",
+  "needs": "Your Balatro.exe from Steam beside it",
+  "changes": "The first release.",
+  "source": "https://github.com/dougieprishpreed/balatro360",
+  "license": "MIT",
+  "screenshot": "shots/balatro360.png",
+  "launch": "default.xex"
+}

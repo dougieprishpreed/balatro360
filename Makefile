@@ -37,6 +37,7 @@ OPT ?= -O2 -g
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null)$(shell git status --porcelain --untracked-files=no 2>/dev/null | head -c1 | sed 's/./+/')
 GIT_DATE := $(shell git log -1 --format=%cI 2>/dev/null)
 STAMP := $(if $(GIT_COMMIT),-DB360_GIT_COMMIT='"$(GIT_COMMIT)"' -DB360_GIT_DATE='"$(GIT_DATE)"',)
+STAMP += -DB360_VERSION='"$(shell cat tools/release/VERSION)"'
 CXXFLAGS := $(OPT) -std=c++98 -fsigned-char $(WARN) $(INCLUDES) $(STAMP)
 CFLAGS := $(OPT) -std=c99 -fsigned-char $(INCLUDES)
 
