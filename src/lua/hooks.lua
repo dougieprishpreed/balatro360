@@ -22,6 +22,8 @@ local hooks = {}
 --     B360_HALF_RES_BACKGROUND = false  draw the swirling backgrounds at full
 --                             resolution (xSDK build; they're blocks of two
 --                             pixels anyway, so half size looks the same)
+--     B360_CRT_BLOOM = "original"  the CRT bloom setting's own 49 samples a
+--                             pixel instead of 9 (far slower on the console)
 --     B360_INTERPOLATE = true at 30 fps, show a frame halfway between each
 --                             two (xSDK build; 60 a second, a frame late, and
 --                             in-between frames go wrong when cards reorder)
@@ -211,6 +213,55 @@ hooks["game"] = function()
 	end
 end
 
+-- Two things Balatro keeps for the rest of a run, drawing and updating
+-- them every frame although nothing shows: a PC never notices, but on the
+-- console a run got slower ante by ante (by ante 8, twice the draw calls
+-- and a third more Lua work in every screen than at ante 1).
+--
+-- Each round's "Cash Out" button is a UIBox of its own whose major is the
+-- round summary (functions/common_events.lua); removing the summary leaves
+-- it in G.I.UIBOX, off screen. A UIBox removed here takes the UIBoxes
+-- aligned to it along.
+hooks["engine/ui"] = function()
+	if type(UIBox) ~= "table" or type(UIBox.remove) ~= "function" then return end
+	local remove = UIBox.remove
+	UIBox.remove = function(self, ...)
+		local r = remove(self, ...)
+		local list = G and G.I and G.I.UIBOX
+		if list then
+			local minors
+			for _, box in ipairs(list) do
+				if box ~= self and box.config and box.config.major == self then
+					minors = minors or {}
+					minors[#minors + 1] = box
+				end
+			end
+			if minors then
+				for _, box in ipairs(minors) do
+					if not box.REMOVED then box:remove() end
+				end
+			end
+		end
+		return r
+	end
+end
+
+-- Each defeated blind leaves its dissolve particles (blind.lua,
+-- Blind:defeat) among the run-long Blind's children and in G.I.MOVEABLE,
+-- emptied after a second. Remove the last defeat's before the next.
+hooks["blind"] = function()
+	if type(Blind) ~= "table" or type(Blind.defeat) ~= "function" then return end
+	local defeat = Blind.defeat
+	Blind.defeat = function(self, ...)
+		local old = self.children and self.children.particles
+		if type(old) == "table" and type(old.remove) == "function" and not old.REMOVED then
+			old:remove()
+			self.children.particles = nil
+		end
+		return defeat(self, ...)
+	end
+end
+
 -- Performance: Balatro's classes (engine/object.lua, the SNKRX/classic
 -- pattern) resolve methods through a chain of __index tables, e.g.
 -- Card -> Moveable -> Node -> Object. Plain Lua 5.1 pays for every hop on
@@ -250,14 +301,61 @@ end
 -- screen) cover the screen in blocks of about two pixels, and are each
 -- frame's most costly draw after the CRT pass: draw them at half size.
 local HALF_RES_SHADERS = { ["background.fs"] = true, ["splash.fs"] = true }
-local function install_half_res(cfg)
+
+-- The CRT effect's bloom (Settings > Graphics) sums a 7x7 grid of samples
+-- for every pixel of the screen: 49 texture reads in a loop, about 75 ms a
+-- frame on the console. These 9 reads, every other one of the grid's inner
+-- 5x5, weighted to give the same total, look nearly the same for a soft
+-- glow. B360_CRT_BLOOM = "original" keeps the game's loop.
+-- Each tap is the game's: the darkest channel past 0.6, stretched to 0..1
+-- (max(2.5*c - 1.5, 0) per channel, then the minimum, is the same thing).
+-- Its weight is the game's 2 - |i+j|/6 for the tap's place in the grid,
+-- times 79.33/15.33 (the 7x7's weights over these 9's), over 9.
+local BLOOM_TAPS = {
+	{ -2, -2, "0.766506" }, { 0, -2, "0.958132" }, { 2, -2, "1.149758" },
+	{ -2, 0, "0.958132" }, { 0, 0, "1.149758" }, { 2, 0, "0.958132" },
+	{ -2, 2, "1.149758" }, { 0, 2, "0.958132" }, { 2, 2, "0.766506" },
+}
+local function bloom_code()
+	local lines = {
+		"        MY_HIGHP_OR_MEDIUMP vec4 samp;",
+		"        MY_HIGHP_OR_MEDIUMP float glow = 0.0;",
+	}
+	for _, t in ipairs(BLOOM_TAPS) do
+		lines[#lines + 1] = string.format("        samp = Texel(tex, tc + vec2(%.4f, %.4f));", 0.0015 * t[1], 0.0015 * t[2])
+		lines[#lines + 1] = "        glow += max(2.5*min(min(samp.r, samp.g), samp.b) - 1.5, 0.)*" .. t[3] .. ";"
+	end
+	lines[#lines + 1] = "        col = vec4(glow);"
+	return table.concat(lines, "\n") .. "\n"
+end
+
+local function fast_bloom(source)
+	local first = source:find("MY_HIGHP_OR_MEDIUMP float bloom_dist", 1, true)
+	local last_s, last_e = source:find("col /= float(BLOOM_AMT*BLOOM_AMT);", 1, true)
+	if not first or not last_s or last_s < first then return nil end
+	-- Back to the start of the line, so the replacement keeps its indent.
+	while first > 1 and source:sub(first - 1, first - 1) ~= "\n" do first = first - 1 end
+	return source:sub(1, first - 1) .. bloom_code() .. source:sub(last_e + 1)
+end
+
+local function install_shader_hooks(cfg)
 	local graphics = love.graphics
-	if cfg.B360_HALF_RES_BACKGROUND == false or not graphics._b360_setHalfResolution then return end
+	local half_res = cfg.B360_HALF_RES_BACKGROUND ~= false and graphics._b360_setHalfResolution
+	local bloom = cfg.B360_CRT_BLOOM ~= "original"
 	local new_shader = graphics.newShader
 	graphics.newShader = function(code, ...)
+		local file = type(code) == "string" and not code:find("\n") and code:match("([^/]+)$")
+		if file == "CRT.fs" and bloom then
+			local source = love.filesystem.read(code)
+			local patched = source and fast_bloom(source)
+			if patched then
+				code = patched
+			else
+				print("[b360] CRT.fs: the bloom loop wasn't found; drawing the game's own")
+			end
+		end
 		local shader = new_shader(code, ...)
-		local file = type(code) == "string" and code:match("([^/]+)$")
-		if file and HALF_RES_SHADERS[file] and not code:find("\n") then
+		if half_res and file and HALF_RES_SHADERS[file] then
 			graphics._b360_setHalfResolution(shader, true)
 		end
 		return shader
@@ -274,7 +372,7 @@ function love._b360_postmain()
 	end
 	apply_frame_rate(cfg)
 	install_perf_tools(cfg)
-	install_half_res(cfg)
+	install_shader_hooks(cfg)
 end
 
 -- Wrap require so hooks run once their module has loaded.

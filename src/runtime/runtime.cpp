@@ -12,6 +12,7 @@
 namespace rt {
 
 bool initGraphics(int width, int height);
+void shutdownGraphics();
 void shutdownAudio();
 
 namespace {
@@ -157,6 +158,11 @@ int run(int argc, char** argv) {
     plat::log("Balatro360 exiting with code %d", code);
     profilerStop();
     shutdownAudio();
+#ifdef __XSDK__
+    // The render thread stops before the title ends, as xsdk's exit closes
+    // the display and the GPU under it.
+    shutdownGraphics();
+#endif
     plat::shutdown();
     // Worker threads (sound/save managers) block forever on their channels,
     // exactly like in LÖVE; the process exit tears them down.

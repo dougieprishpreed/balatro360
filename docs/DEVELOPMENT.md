@@ -94,6 +94,8 @@ return {
     B360_SAFE_AREA = 0.92,  -- shrink the picture if your TV crops the edges
     B360_HALF_RES_BACKGROUND = false, -- draw the swirling backgrounds at full
                             -- resolution (they're blocks of two pixels anyway)
+    B360_CRT_BLOOM = "original", -- the CRT bloom setting's own 49 samples a
+                            -- pixel, not the port's 9 (far slower)
 
     -- For testing (all off unless set)
     B360_SHOW_FPS = true,   -- overlay: FPS, frame time, CPU time per frame

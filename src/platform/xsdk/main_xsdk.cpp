@@ -1,11 +1,13 @@
 // Xbox 360 entry point (xSDK). xSDK's start-up opens its own log
-// (default.log), runs the static constructors and calls main(); returning
-// from main goes back to the dashboard.
+// (default.log), runs the static constructors and calls main(), which ends
+// the title with _exit, back to the dashboard.
 #include "../../runtime/runtime.h"
 
 #include <xsdk/thread.h>
 
 #include <pthread.h>
+#include <stdio.h>
+#include <unistd.h>
 
 namespace {
 
@@ -31,5 +33,11 @@ int main() {
     pthread_t t;
     if (pthread_create(&t, &attr, gameThread, NULL) == 0) pthread_join(t, NULL);
     pthread_attr_destroy(&attr);
-    return g_exitCode;
+    // _exit, not exit: the game's worker threads (sound and save managers)
+    // still wait on their channels, and the static destructors exit runs
+    // would free those under them (b360.log's run ended in an abort).
+    // xsdk's _exit still gives the display and GPU back to XAM and goes to
+    // the dashboard.
+    fflush(NULL);
+    _exit(g_exitCode);
 }

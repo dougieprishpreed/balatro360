@@ -1950,6 +1950,13 @@ bool initGraphics(int width, int height) {
     return true;
 }
 
+// Stops drawing for good: the render thread finishes its frame and ends.
+// Objects Lua still holds keep their (now unused) device pointers.
+void shutdownGraphics() {
+    delete g_dev;
+    g_dev = NULL;
+}
+
 void open_graphics(lua_State* L) {
     TypeDef drawable = {"Drawable", NULL, NULL};
     TypeDef texture = {"Texture", "Drawable", kTextureMethods};
