@@ -5,7 +5,7 @@
   "category": "ports",
   "sentence": "The poker roguelike, run from your own copy of the PC game at 1280x720.",
   "needs": "Your Balatro.exe from Steam beside it",
-  "changes": "Stays quick late in a run; faster CRT bloom; steady CRT corners; clean exit.",
+  "changes": "Double Tag copies show again; no slowdown over long sessions; quick taps register.",
   "source": "https://github.com/dougieprishpreed/balatro360",
   "license": "MIT",
   "screenshot": "shots/balatro360.png",

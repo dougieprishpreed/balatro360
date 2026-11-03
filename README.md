@@ -39,7 +39,7 @@ quicker.
 * The game uses Balatro's own controller support: **A** to select, **B** to go
   back, and so on.
 * Hold **BACK + START** for a second to quit to the dashboard.
-* Menus run at 60 fps. Busy scenes and most of a run play at a steady 30 fps.
+* The game plays at a steady 30 fps.
 * Seeded runs play out the same as on PC.
 
 ## Saves

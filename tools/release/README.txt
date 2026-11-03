@@ -43,8 +43,7 @@ Playing
 * Saves are in apps\balatro360\save. They use the PC version's format, so
   you can copy your PC profiles (the 1, 2 and 3 folders in %AppData%\Balatro)
   there and back.
-* Balatro runs at 60 frames a second in menus and drops to a steady 30 in
-  busy scenes and most of a run.
+* Balatro runs at a steady 30 frames a second.
 
 
 Settings (optional)
