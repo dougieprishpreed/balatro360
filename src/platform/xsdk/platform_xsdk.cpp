@@ -429,6 +429,61 @@ void padPoll(PadState pads[MAX_PADS]) {
     }
 }
 
+// The pads are read every 4 ms on a thread of their own (hardware thread 5,
+// beside the game's worker threads), and each change of a button is kept for
+// the next frame, in order. Read once a frame, a d-pad tap shorter than a
+// 30 fps frame (33 ms) was lost when it fell between two reads.
+namespace {
+Mutex* g_padMutex = NULL;
+PadState g_padHistory[PAD_HISTORY][MAX_PADS];
+int g_padHistoryCount = 0;
+PadState g_padNow[MAX_PADS];
+bool g_padReaderTried = false;
+bool g_padReaderRunning = false;
+
+bool buttonsDiffer(const PadState* a, const PadState* b) {
+    for (int i = 0; i < MAX_PADS; ++i) {
+        if (a[i].connected != b[i].connected) return true;
+        if (memcmp(a[i].buttons, b[i].buttons, sizeof(a[i].buttons)) != 0) return true;
+    }
+    return false;
+}
+
+void padReader(void*) {
+    PadState s[MAX_PADS];
+    for (;;) {
+        padPoll(s);
+        {
+            Lock l(*g_padMutex);
+            // The last slot stays free for the current state.
+            if (buttonsDiffer(s, g_padNow) && g_padHistoryCount < PAD_HISTORY - 1)
+                memcpy(g_padHistory[g_padHistoryCount++], s, sizeof(s));
+            memcpy(g_padNow, s, sizeof(s));
+        }
+        sleep(0.004);
+    }
+}
+}  // namespace
+
+int padPollAll(PadState history[PAD_HISTORY][MAX_PADS]) {
+    if (!g_padReaderTried) {
+        g_padReaderTried = true;
+        g_padMutex = new Mutex;
+        padPoll(g_padNow);
+        g_padReaderRunning = threadCreate(padReader, NULL, 5, 64 * 1024) != NULL;
+    }
+    if (!g_padReaderRunning) {
+        padPoll(history[0]);
+        return 1;
+    }
+    Lock l(*g_padMutex);
+    int n = g_padHistoryCount;
+    memcpy(history, g_padHistory, sizeof(g_padHistory[0]) * n);
+    memcpy(history[n], g_padNow, sizeof(g_padNow));
+    g_padHistoryCount = 0;
+    return n + 1;
+}
+
 void padVibrate(int pad, float left, float right) {
     // Balatro sets the vibration every frame; only talk to the controller
     // when the value actually changes.

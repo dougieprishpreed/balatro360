@@ -372,6 +372,11 @@ void padPoll(PadState pads[MAX_PADS]) {
     pads[0] = g_pad;
 }
 
+int padPollAll(PadState history[PAD_HISTORY][MAX_PADS]) {
+    padPoll(history[0]);
+    return 1;
+}
+
 void padVibrate(int pad, float left, float right) {
     (void)pad;
     (void)left;

@@ -133,6 +133,11 @@ struct PadState {
 };
 
 void padPoll(PadState pads[MAX_PADS]);
+// Every state the pads were in since the last call, oldest first, the last
+// one current; returns how many (1 where the pads are only read when asked).
+// A button pressed and let go between two frames shows up in between.
+enum { PAD_HISTORY = 16 };
+int padPollAll(PadState history[PAD_HISTORY][MAX_PADS]);
 void padVibrate(int pad, float left, float right);
 
 // Keyboard/mouse events (host testing only; the 360 returns nothing).

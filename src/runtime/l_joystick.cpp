@@ -302,9 +302,18 @@ const luaL_Reg kFuncs[] = {
 
 namespace joystick {
 
+void applyState(const plat::PadState now[plat::MAX_PADS]);
+
 void update() {
-    plat::PadState now[plat::MAX_PADS];
-    plat::padPoll(now);
+    // Each state since the last frame in turn, so a quick tap between two
+    // frames still gives its press and its release.
+    static plat::PadState history[plat::PAD_HISTORY][plat::MAX_PADS];
+    int states = plat::padPollAll(history);
+    for (int h = 0; h < states; ++h) applyState(history[h]);
+}
+
+// Events for the change from the last state to this one.
+void applyState(const plat::PadState now[plat::MAX_PADS]) {
     double t = plat::getTime();
     for (int i = 0; i < plat::MAX_PADS; ++i) {
         Joystick* j = pad(i);

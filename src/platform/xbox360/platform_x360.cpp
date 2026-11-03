@@ -431,6 +431,11 @@ void padPoll(PadState pads[MAX_PADS]) {
     }
 }
 
+int padPollAll(PadState history[PAD_HISTORY][MAX_PADS]) {
+    padPoll(history[0]);
+    return 1;
+}
+
 void padVibrate(int pad, float left, float right) {
     // Balatro sets the vibration every frame; only talk to the controller
     // when the value actually changes.

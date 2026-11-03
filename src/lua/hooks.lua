@@ -221,7 +221,10 @@ end
 -- Each round's "Cash Out" button is a UIBox of its own whose major is the
 -- round summary (functions/common_events.lua); removing the summary leaves
 -- it in G.I.UIBOX, off screen. A UIBox removed here takes the UIBoxes
--- aligned to it along.
+-- still aligned to it along. That's role.major, which the game re-points:
+-- config.major keeps the first major, and the tags on the HUD are each
+-- aligned to the one before, so a used-up Double Tag took the tags it had
+-- just added with it (1.0.1).
 hooks["engine/ui"] = function()
 	if type(UIBox) ~= "table" or type(UIBox.remove) ~= "function" then return end
 	local remove = UIBox.remove
@@ -231,7 +234,7 @@ hooks["engine/ui"] = function()
 		if list then
 			local minors
 			for _, box in ipairs(list) do
-				if box ~= self and box.config and box.config.major == self then
+				if box ~= self and box.role and box.role.major == self then
 					minors = minors or {}
 					minors[#minors + 1] = box
 				end
