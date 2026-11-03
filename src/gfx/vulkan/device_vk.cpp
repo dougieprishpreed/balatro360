@@ -1315,6 +1315,15 @@ private:
         beginFrame();
         VkTex* t = target ? target : backbuffer();
         if (!t) return;
+        if (!target && t->layout == VK_IMAGE_LAYOUT_UNDEFINED && !pendingClear) {
+            // A new frame on the screen starts black. Balatro's love.run
+            // never clears it, and its CRT pass leaves the corners outside
+            // the curve transparent: "don't care" showed eDRAM's leftovers
+            // there, the canvas just drawn, flickering on the console.
+            const float black[4] = {0, 0, 0, 1};
+            memcpy(clearColor, black, sizeof(black));
+            pendingClear = true;
+        }
         VkAttachmentLoadOp load = pendingClear ? VK_ATTACHMENT_LOAD_OP_CLEAR
                                   : t->layout == VK_IMAGE_LAYOUT_UNDEFINED ? VK_ATTACHMENT_LOAD_OP_DONT_CARE
                                                                            : VK_ATTACHMENT_LOAD_OP_LOAD;
