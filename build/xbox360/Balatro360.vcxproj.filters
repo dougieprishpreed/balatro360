@@ -102,6 +102,9 @@
     <ClCompile Include="..\..\src\runtime\font.cpp">
       <Filter></Filter>
     </ClCompile>
+    <ClCompile Include="..\..\src\runtime\l_accel.cpp">
+      <Filter></Filter>
+    </ClCompile>
     <ClCompile Include="..\..\src\runtime\l_audio.cpp">
       <Filter></Filter>
     </ClCompile>

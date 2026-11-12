@@ -16,6 +16,7 @@
 #include "stb_image.h"
 #include "stb_image_write.h"
 
+#include <algorithm>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1769,6 +1770,188 @@ int w_none(lua_State* L) {
     return 0;
 }
 
+// --------------------------------------------------------- particle lists
+// Balatro's particle systems (engine/particles.lua: the Planet, Tarot and
+// Spectral packs' skies, a defeated blind's dissolve, ...) move and draw
+// every particle in Lua each frame: a Planet pack keeps ~200 alive. hooks.lua
+// keeps spawning in Lua (it draws on math.random) and hands each new
+// particle's table to a list here; moving and drawing then run in C++, with
+// the game's arithmetic in its order, so frames come out the same. The
+// game's own list keeps a placeholder per live particle for its count.
+struct NativeParticle {
+    double dir, facing, age, velocity, r_vel, e_prev, e_curr, e_vel, scale, ox, oy;
+    bool draw, hasVel;
+    int colour;   // index in the system's palette of colour tables
+};
+
+class ParticleList : public Object {
+public:
+    std::vector<NativeParticle> ps;
+};
+
+ParticleList* checkParticles(lua_State* L, int idx) { return (ParticleList*)luax_checkobject(L, idx, "B360ParticleList"); }
+
+double fieldNumber(lua_State* L, int idx, const char* key) {
+    lua_getfield(L, idx, key);
+    double v = lua_tonumber(L, -1);
+    lua_pop(L, 1);
+    return v;
+}
+
+int w_newParticleList(lua_State* L) {
+    ParticleList* p = new ParticleList;
+    luax_pushobject(L, "B360ParticleList", p);
+    p->release();
+    return 1;
+}
+
+// _b360_particlesAdopt(list, particles, palette): the particle tables
+// spawning appended to particles become native, leaving placeholders; each
+// one's colour table is found in (or added to) palette.
+int w_particlesAdopt(lua_State* L) {
+    ParticleList* pl = checkParticles(L, 1);
+    luaL_checktype(L, 2, LUA_TTABLE);
+    luaL_checktype(L, 3, LUA_TTABLE);
+    int n = (int)lua_objlen(L, 2);
+    for (int i = (int)pl->ps.size() + 1; i <= n; ++i) {
+        lua_rawgeti(L, 2, i);
+        if (!lua_istable(L, -1)) {
+            lua_pop(L, 1);
+            return luaL_error(L, "particle %d isn't a table", i);
+        }
+        int t = lua_gettop(L);
+        NativeParticle q;
+        lua_getfield(L, t, "draw");
+        q.draw = lua_toboolean(L, -1) != 0;
+        lua_pop(L, 1);
+        q.dir = fieldNumber(L, t, "dir");
+        q.facing = fieldNumber(L, t, "facing");
+        q.age = fieldNumber(L, t, "age");
+        q.velocity = fieldNumber(L, t, "velocity");
+        q.r_vel = fieldNumber(L, t, "r_vel");
+        q.e_prev = fieldNumber(L, t, "e_prev");
+        q.e_curr = fieldNumber(L, t, "e_curr");
+        q.scale = fieldNumber(L, t, "scale");
+        lua_getfield(L, t, "e_vel");
+        q.hasVel = !lua_isnil(L, -1);
+        q.e_vel = lua_tonumber(L, -1);
+        lua_pop(L, 1);
+        lua_getfield(L, t, "offset");
+        q.ox = fieldNumber(L, -1, "x");
+        q.oy = fieldNumber(L, -1, "y");
+        lua_pop(L, 1);
+        lua_getfield(L, t, "colour");
+        int pn = (int)lua_objlen(L, 3);
+        q.colour = 0;
+        for (int c = 1; c <= pn && !q.colour; ++c) {
+            lua_rawgeti(L, 3, c);
+            if (lua_rawequal(L, -1, -2)) q.colour = c;
+            lua_pop(L, 1);
+        }
+        if (!q.colour) {
+            q.colour = pn + 1;
+            lua_pushvalue(L, -1);
+            lua_rawseti(L, 3, q.colour);
+        }
+        lua_pop(L, 2);   // colour, the particle
+        pl->ps.push_back(q);
+        lua_pushboolean(L, 1);
+        lua_rawseti(L, 2, i);
+    }
+    return 0;
+}
+
+// _b360_particlesMove(list, particles, dt, scale, lifespan): Particles:move's
+// loop, newest first, dropping the particles that shrank away (and as many
+// placeholders).
+int w_particlesMove(lua_State* L) {
+    ParticleList* pl = checkParticles(L, 1);
+    luaL_checktype(L, 2, LUA_TTABLE);
+    double dt = luaL_checknumber(L, 3), scale = luaL_checknumber(L, 4), lifespan = luaL_checknumber(L, 5);
+    std::vector<NativeParticle>& ps = pl->ps;
+    for (int i = (int)ps.size() - 1; i >= 0; --i) {
+        NativeParticle& p = ps[i];
+        p.draw = true;
+        if (!p.hasVel) {
+            p.e_vel = dt * scale;
+            p.hasVel = true;
+        }
+        p.e_prev = p.e_curr;
+        p.age = p.age + dt;
+        double grow = (p.age / lifespan) * scale, shrink = scale * ((lifespan - p.age) / lifespan);
+        p.e_curr = std::min(2 * std::min(grow, shrink), scale);
+        p.e_vel = (p.e_curr - p.e_prev) * scale * dt + (1 - scale * dt) * p.e_vel;
+        p.scale = p.scale + p.e_vel;
+        p.scale = std::min(2 * std::min(grow, shrink), scale);
+        if (p.scale < 0) {
+            ps.erase(ps.begin() + i);
+        } else {
+            p.ox = p.ox + p.velocity * sin(p.dir) * dt;
+            p.oy = p.oy + p.velocity * cos(p.dir) * dt;
+            p.facing = p.facing + p.r_vel * dt;
+            p.velocity = std::max(0.0, p.velocity - p.velocity * 0.07 * dt);
+        }
+    }
+    for (int i = (int)lua_objlen(L, 2); i > (int)ps.size(); --i) {
+        lua_pushnil(L);
+        lua_rawseti(L, 2, i);
+    }
+    return 0;
+}
+
+// _b360_particlesDraw(list, palette, alpha, 1 - fade_alpha): what
+// Particles:draw does for each particle between its translate and pop, in the
+// current transform. Like setColor there, the last colour stays set.
+int w_particlesDraw(lua_State* L) {
+    ParticleList* pl = checkParticles(L, 1);
+    luaL_checktype(L, 2, LUA_TTABLE);
+    double alpha = luaL_checknumber(L, 3), fade = luaL_checknumber(L, 4);
+    // The palette's colours as they are now (the game may change them).
+    int pn = (int)lua_objlen(L, 2);
+    std::vector<double> rgba((size_t)(pn + 1) * 4, 0.0);
+    for (int c = 1; c <= pn; ++c) {
+        lua_rawgeti(L, 2, c);
+        for (int k = 0; k < 4; ++k) rgba[(size_t)c * 4 + k] = luax_numberindex(L, -1, k + 1, 0);
+        lua_pop(L, 1);
+    }
+    applyCanvas();
+    Points p(8);
+    for (size_t i = 0; i < pl->ps.size(); ++i) {
+        const NativeParticle& q = pl->ps[i];
+        if (!q.draw) continue;
+        const double* c = &rgba[(size_t)q.colour * 4];
+        g_state.color.r = (float)c[0];
+        g_state.color.g = (float)c[1];
+        g_state.color.b = (float)c[2];
+        g_state.color.a = (float)(c[3] * alpha * fade);
+        Matrix saved = g_transform;
+        Matrix t;
+        t.e = (float)q.ox;
+        t.f = (float)q.oy;
+        g_transform = g_transform * t;
+        float a = (float)q.facing;
+        Matrix r;
+        r.a = cosf(a);
+        r.b = sinf(a);
+        r.c = -r.b;
+        r.d = r.a;
+        g_transform = g_transform * r;
+        float x = (float)(-q.scale / 2), w = (float)q.scale;
+        p.resize(8);
+        p[0] = x;
+        p[1] = x;
+        p[2] = x + w;
+        p[3] = x;
+        p[4] = x + w;
+        p[5] = x + w;
+        p[6] = x;
+        p[7] = x + w;
+        fillPolygon(p);
+        g_transform = saved;
+    }
+    return 0;
+}
+
 int w_getStats(lua_State* L) {
     lua_newtable(L);
     lua_pushinteger(L, g_drawCallsLast);
@@ -1927,6 +2110,8 @@ const luaL_Reg kFuncs[] = {
     {"_b360_getFrameInfo", w_getFrameInfo}, {"_b360_startProfiler", w_startProfiler},
     {"_b360_gpuProfile", w_gpuProfile}, {"_b360_setHalfResolution", w_setHalfResolution},
     {"_b360_setInterpolation", w_setInterpolation}, {"_b360_allowScreenshots", w_allowScreenshots},
+    {"_b360_newParticleList", w_newParticleList}, {"_b360_particlesAdopt", w_particlesAdopt},
+    {"_b360_particlesMove", w_particlesMove}, {"_b360_particlesDraw", w_particlesDraw},
     {"setStencilTest", w_none}, {"stencil", w_none}, {"flushBatch", w_none}, {"discard", w_none},
     {NULL, NULL}};
 
@@ -1990,7 +2175,9 @@ void open_graphics(lua_State* L) {
     TypeDef shader = {"Shader", NULL, kShaderMethods};
     TypeDef font = {"Font", NULL, kFontMethods};
     TypeDef text = {"Text", "Drawable", kTextMethods};
+    TypeDef particles = {"B360ParticleList", NULL, NULL};
     luax_registertype(L, drawable);
+    luax_registertype(L, particles);
     luax_registertype(L, texture);
     luax_registertype(L, image);
     luax_registertype(L, canvas);

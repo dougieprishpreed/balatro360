@@ -421,6 +421,7 @@
     </ClCompile>
     <ClCompile Include="..\..\src\runtime\filesystem.cpp" />
     <ClCompile Include="..\..\src\runtime\font.cpp" />
+    <ClCompile Include="..\..\src\runtime\l_accel.cpp" />
     <ClCompile Include="..\..\src\runtime\l_audio.cpp" />
     <ClCompile Include="..\..\src\runtime\l_compat.cpp">
       <FloatingPointModel>Strict</FloatingPointModel>

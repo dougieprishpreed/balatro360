@@ -96,7 +96,10 @@ lua_State* newLuaState(bool mainThread) {
     open_input_stubs(L);
     open_window(L);
     open_image(L);
-    if (mainThread) open_graphics(L);
+    if (mainThread) {
+        open_graphics(L);
+        open_accel(L);
+    }
 
     runEmbedded(L, kLua_common, kLua_common_size, "=[b360 common]", 0);
     return L;

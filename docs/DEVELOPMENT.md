@@ -96,6 +96,10 @@ return {
                             -- resolution (they're blocks of two pixels anyway)
     B360_CRT_BLOOM = "original", -- the CRT bloom setting's own 49 samples a
                             -- pixel, not the port's 9 (far slower)
+    B360_NATIVE_PARTICLES = false, -- move and draw particles (pack skies,
+                            -- dissolves) in the game's Lua, not in C++
+    B360_NATIVE_COLLISION = false, -- test the cursor against what's on
+                            -- screen in the game's Lua, not in C++
 
     -- For testing (all off unless set)
     B360_SHOW_FPS = true,   -- overlay: FPS, frame time, CPU time per frame

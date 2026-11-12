@@ -22,6 +22,10 @@ local hooks = {}
 --     B360_HALF_RES_BACKGROUND = false  draw the swirling backgrounds at full
 --                             resolution (xSDK build; they're blocks of two
 --                             pixels anyway, so half size looks the same)
+--     B360_NATIVE_PARTICLES = false  move and draw particles in the game's
+--                             own Lua (slower; the same picture)
+--     B360_NATIVE_COLLISION = false  test the cursor against nodes in the
+--                             game's own Lua (slower; the same result)
 --     B360_CRT_BLOOM = "original"  the CRT bloom setting's own 49 samples a
 --                             pixel instead of 9 (far slower on the console)
 --     B360_INTERPOLATE = true at 30 fps, show a frame halfway between each
@@ -277,6 +281,91 @@ hooks["blind"] = function()
 		end
 		return defeat(self, ...)
 	end
+end
+
+-- FNV-1a of a string, as an unsigned 32-bit number.
+local function fnv1a(s)
+	local bxor = bit.bxor
+	local h = 2166136261
+	for i = 1, #s do
+		h = bxor(h, s:byte(i))
+		if h < 0 then h = h + 4294967296 end
+		-- h * 16777619 mod 2^32, exact in doubles: 16777619 = 2^24 + 403.
+		h = (h * 403 + (h % 256) * 16777216) % 4294967296
+	end
+	return h
+end
+
+-- Particle systems (engine/particles.lua) move and draw every particle in
+-- Lua each frame: a Planet pack's sky keeps ~200 alive, ~15% of that screen's
+-- work. Spawning stays the game's (it draws on math.random); moving and
+-- drawing go to love.graphics._b360_particles*, which do the same arithmetic
+-- in C++ (l_graphics.cpp). Only for the particles.lua it was written
+-- against (Balatro 1.0.1o); any other keeps the game's own.
+local PARTICLES_FNV = 2516319127
+hooks["engine/particles"] = function()
+	local graphics = love.graphics
+	if type(Particles) ~= "table" or not graphics._b360_particlesMove or type(bit) ~= "table" then return end
+	if config().B360_NATIVE_PARTICLES == false then return end
+	local source = love.filesystem.read("engine/particles.lua")
+	if not source or fnv1a(source) ~= PARTICLES_FNV then
+		print("[b360] particles: the game's own (engine/particles.lua isn't the one this runtime knows)")
+		return
+	end
+	local new_list, adopt = graphics._b360_newParticleList, graphics._b360_particlesAdopt
+	local move_all, draw_all = graphics._b360_particlesMove, graphics._b360_particlesDraw
+	local update = Particles.update
+	local function native(self)
+		local list = rawget(self, "_b360_list")
+		if not list then
+			list = new_list()
+			self._b360_list = list
+			self._b360_palette = {}
+		end
+		adopt(list, self.particles, self._b360_palette)
+		return list
+	end
+	Particles.update = function(self, dt)
+		update(self, dt)
+		native(self)
+	end
+	Particles.move = function(self, dt)
+		if G.SETTINGS.paused and not self.created_on_pause then return end
+		Moveable.move(self, dt)
+		if self.timer_type ~= "REAL" then dt = dt * G.SPEEDFACTOR end
+		move_all(native(self), self.particles, dt, self.scale, self.lifespan)
+	end
+	Particles.draw = function(self, alpha)
+		alpha = alpha or 1
+		prep_draw(self, 1)
+		graphics.translate(self.T.w / 2, self.T.h / 2)
+		draw_all(native(self), self._b360_palette, alpha, 1 - self.fade_alpha)
+		graphics.pop()
+		add_to_drawhash(self)
+		self:draw_boundingrect()
+	end
+end
+
+-- Every frame the controller tests the cursor against every node drawn
+-- (Controller:get_cursor_collision), ~9-11% of each screen's Lua work:
+-- Node:collides_with_point and the point helpers it calls go to
+-- love._b360_collidesWithPoint (l_accel.cpp), the same arithmetic in C++.
+-- UIElement's own calls Node.collides_with_point; flatten_classes copies it
+-- into the subclasses. Only for the files it was written against.
+local NODE_FNV, POINT_HELPERS_FNV = 2392915978, 2754489206
+hooks["engine/node"] = function()
+	local collides = love._b360_collidesWithPoint
+	if type(Node) ~= "table" or not collides or type(bit) ~= "table" then return end
+	if config().B360_NATIVE_COLLISION == false then return end
+	local node = love.filesystem.read("engine/node.lua")
+	local misc = love.filesystem.read("functions/misc_functions.lua") or ""
+	local a = misc:find("function point_translate(", 1, true)
+	local z = misc:find("function lighten(", 1, true)
+	if not node or fnv1a(node) ~= NODE_FNV or not a or not z or fnv1a(misc:sub(a, z - 1)) ~= POINT_HELPERS_FNV then
+		print("[b360] cursor collision: the game's own (engine/node.lua isn't the one this runtime knows)")
+		return
+	end
+	Node.collides_with_point = collides
 end
 
 -- Performance: Balatro's classes (engine/object.lua, the SNKRX/classic

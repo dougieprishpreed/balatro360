@@ -24,6 +24,7 @@ void open_image(lua_State* L);
 
 // Main thread only.
 void open_graphics(lua_State* L);
+void open_accel(lua_State* L);   // native Balatro hot paths (l_accel.cpp)
 
 // LuaJIT compatibility: bit, jit, math.random (TW223), math.log(x, base),
 // a portable os library.
