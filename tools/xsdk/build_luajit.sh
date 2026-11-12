@@ -54,8 +54,10 @@ LIBS=(lib_base.c lib_math.c lib_bit.c lib_string.c lib_table.c lib_io.c lib_os.c
 ./buildvm -m folddef -o lj_folddef.h lj_opt_fold.c
 
 # -ffp-contract=off is /fp:strict: fused multiply-adds change math.random's
-# results, and seeds must match the PC (tests/rng).
-CFLAGS=(-mcpu=cell -fno-pic -O2 -ffp-contract=off -fomit-frame-pointer -DNDEBUG -DLUAJIT_USE_SYSMALLOC "${DEFS[@]}")
+# results, and seeds must match the PC (tests/rng). -fno-branch-count-reg:
+# GCC 15.3 gets the "runs once" guard of some counted loops wrong (see
+# build/xsdk/CMakeLists.txt).
+CFLAGS=(-mcpu=cell -fno-pic -O2 -ffp-contract=off -fno-branch-count-reg -fomit-frame-pointer -DNDEBUG -DLUAJIT_USE_SYSMALLOC "${DEFS[@]}")
 "$CC" -mcpu=cell -c lj_vm.s -o lj_vm.o
 printf '%s\n' lj_*.c lib_*.c | xargs -P "$JOBS" -I{} "$CC" "${CFLAGS[@]}" -c {}
 rm -f "$OUT/libluajit.a"

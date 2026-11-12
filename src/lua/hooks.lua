@@ -193,6 +193,20 @@ hooks["game"] = function()
 		apply_console_flags(self)
 		return r
 	end
+	-- Pixel Art Smoothing loads every texture again (the 2x set is ~170 MB
+	-- with mipmaps), and the old set goes only when the garbage collector
+	-- gets to its images, which Balatro allows 0.3 ms a frame: turning it
+	-- off and on kept three sets at once and ran the console out of memory
+	-- (issue #3). Collect right away; the render thread frees the textures
+	-- once the frames using them are drawn.
+	if type(Game.set_render_settings) == "function" then
+		local orig_render_settings = Game.set_render_settings
+		Game.set_render_settings = function(self, ...)
+			local r = orig_render_settings(self, ...)
+			collectgarbage("collect")
+			return r
+		end
+	end
 	-- Fonts load on first use (Balatro creates one per language, 60+ MB in
 	-- total). Load the current language's font while the game is still
 	-- starting up, instead of when the main menu first shows text. The

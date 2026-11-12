@@ -20,6 +20,13 @@ get_filename_component(ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 file(STRINGS "${ROOT}/tools/release/VERSION" B360_VERSION LIMIT_COUNT 1)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${ROOT}/tools/release/VERSION")
 
+# No counted (bdnz) loops in anything compiled here, glslang included: the
+# toolchain's GCC 15.3 gets the "runs once" guard of some of them wrong (a
+# copy loop moved half its bytes in Cuphead360). This build had 37 such
+# guards, in stb_vorbis, miniz's inflate, stb_image, stb_truetype and
+# VkDevice::drawTriangles among others.
+add_compile_options(-fno-branch-count-reg)
+
 # glslang compiles the game's shaders to SPIR-V on the console: GLSL only.
 set(ENABLE_OPT OFF CACHE BOOL "" FORCE)
 set(ENABLE_HLSL OFF CACHE BOOL "" FORCE)

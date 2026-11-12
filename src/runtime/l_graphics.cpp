@@ -77,16 +77,31 @@ float clamp01(float v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
 // --------------------------------------------------------------- objects
 gfx::Device* g_dev = NULL;
 
+// Live textures, for love.graphics.getStats().
+double g_textureMemory = 0;
+int g_imageCount = 0;
+int g_canvasCount = 0;
+
 class TextureObject : public Object {
 public:
     gfx::Texture* tex;
     int pw, ph;
     float dpi;
     bool mipmaps;
-    TextureObject() : tex(NULL), pw(0), ph(0), dpi(1), mipmaps(false) {}
+    bool canvas;
+    TextureObject() : tex(NULL), pw(0), ph(0), dpi(1), mipmaps(false), canvas(false) {}
     ~TextureObject() {
-        if (tex && g_dev) g_dev->destroyTexture(tex);
+        if (!tex) return;
+        g_textureMemory -= bytes();
+        --(canvas ? g_canvasCount : g_imageCount);
+        if (g_dev) g_dev->destroyTexture(tex);
     }
+    // Call once tex is set.
+    void counted() {
+        g_textureMemory += bytes();
+        ++(canvas ? g_canvasCount : g_imageCount);
+    }
+    double bytes() const { return (double)pw * ph * 4 * (mipmaps ? 4.0 / 3.0 : 1.0); }
     float width() const { return pw / dpi; }
     float height() const { return ph / dpi; }
 };
@@ -1040,6 +1055,13 @@ int w_newImage(lua_State* L) {
     img->mipmaps = mipmaps;
     img->tex = g_dev->createTexture(w, h, pixels, mipmaps);
     stbi_image_free(pixels);
+    if (!img->tex) {
+        // Out of graphics memory, most likely: an error screen, not a crash.
+        img->release();
+        return luaL_error(L, "Could not create image %dx%d (%.0f MB of textures in use)", w, h,
+                          g_textureMemory / (1024.0 * 1024.0));
+    }
+    img->counted();
     g_dev->setTextureParams(img->tex, g_defaultMin, g_defaultMag, gfx::WRAP_CLAMP, gfx::WRAP_CLAMP);
     luax_pushobject(L, "Image", img);
     img->release();
@@ -1058,11 +1080,13 @@ int w_newCanvas(lua_State* L) {
     if (c->pw < 1) c->pw = 1;
     if (c->ph < 1) c->ph = 1;
     c->dpi = dpi;
+    c->canvas = true;
     c->tex = g_dev->createRenderTarget(c->pw, c->ph);
     if (!c->tex) {
         c->release();
         return luaL_error(L, "Could not create canvas %dx%d", w, h);
     }
+    c->counted();
     g_dev->setTextureParams(c->tex, g_defaultMin, g_defaultMag, gfx::WRAP_CLAMP, gfx::WRAP_CLAMP);
     // createRenderTarget may have changed the bound target.
     g_appliedCanvas = (Canvas*)1;
@@ -1753,11 +1777,11 @@ int w_getStats(lua_State* L) {
     lua_setfield(L, -2, "canvasswitches");
     lua_pushinteger(L, g_verticesLast);
     lua_setfield(L, -2, "b360_vertices");
-    lua_pushinteger(L, 0);
+    lua_pushnumber(L, g_textureMemory);
     lua_setfield(L, -2, "texturememory");
-    lua_pushinteger(L, 0);
+    lua_pushinteger(L, g_imageCount);
     lua_setfield(L, -2, "images");
-    lua_pushinteger(L, 0);
+    lua_pushinteger(L, g_canvasCount);
     lua_setfield(L, -2, "canvases");
     lua_pushinteger(L, 0);
     lua_setfield(L, -2, "fonts");
