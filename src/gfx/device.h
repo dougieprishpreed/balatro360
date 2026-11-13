@@ -109,6 +109,18 @@ public:
     virtual void destroyTexture(Texture* t) = 0;
     virtual void setTextureParams(Texture* t, Filter minF, Filter magF, Wrap ws, Wrap wt) = 0;
 
+    // Frees these textures' memory now, once the frames before are drawn, so
+    // a set of textures can be reloaded without both sets in memory. Each
+    // stays valid (destroyTexture it as usual), and what's drawn with it
+    // isn't drawn. False if the backend can't, and nothing is freed.
+    virtual bool freeTexturesNow(Texture* const* list, int count) {
+        (void)list;
+        (void)count;
+        return false;
+    }
+    // Waits for the GPU and frees what was destroyed.
+    virtual void collectGarbage() {}
+
     // source: LÖVE-dialect GLSL (the contents of a .fs / .glsl file).
     // Returns NULL and fills err on failure.
     virtual Shader* createShader(const std::string& source, std::string& err) = 0;

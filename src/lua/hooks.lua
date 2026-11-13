@@ -147,9 +147,10 @@ local function install_perf_tools(cfg)
 			if log_perf then
 				local vb, _, lerp = 1, 0, false
 				if frame_info then vb, _, lerp = frame_info() end
-				print(string.format("[perf] %d frames, avg %.1f ms (%.1f fps, target %d%s), worst %.1f ms, Lua heap %.1f MB",
+				local mb = graphics._b360_freeMemory and graphics._b360_freeMemory()
+				print(string.format("[perf] %d frames, avg %.1f ms (%.1f fps, target %d%s), worst %.1f ms, Lua heap %.1f MB%s",
 					frames, acc / frames, 1000 * frames / acc, vb == 2 and 30 or 60, lerp and ", shown at 60 interpolated" or "",
-					worst, collectgarbage("count") / 1024))
+					worst, collectgarbage("count") / 1024, mb and string.format(", %.0f MB free", mb) or ""))
 				print(string.format("[perf]   per frame: update %.1f ms, draw %.1f ms, present %.1f ms, %d draw calls, %d vertices",
 					upd * 1000 / frames, drw * 1000 / frames, pres * 1000 / frames, calls / frames, verts / frames))
 			end
@@ -203,11 +204,40 @@ hooks["game"] = function()
 	-- off and on kept three sets at once and ran the console out of memory
 	-- (issue #3). Collect right away; the render thread frees the textures
 	-- once the frames using them are drawn.
+	--
+	-- Even so, the new set loaded while the old one was still there, and the
+	-- console ran out of memory turning it on again in a run. So the old
+	-- set's memory goes first: set_render_settings loads every atlas it
+	-- loaded before again, and points every sprite at the new one before
+	-- anything is drawn.
 	if type(Game.set_render_settings) == "function" then
 		local orig_render_settings = Game.set_render_settings
+		local graphics = love.graphics
+		local unload, free_mb = graphics._b360_unloadImages, graphics._b360_freeMemory
+		local function old_images(self, list, lists, atlases)
+			for _, defs in ipairs(lists) do
+				for _, def in ipairs(defs) do
+					local atlas = def.name and atlases[def.name]
+					if type(atlas) == "table" and atlas.image then list[#list + 1] = atlas.image end
+				end
+			end
+		end
 		Game.set_render_settings = function(self, ...)
+			local unloaded = 0
+			if unload and type(self.ASSET_ATLAS) == "table" and type(self.ANIMATION_ATLAS) == "table" then
+				local list = {}
+				old_images(self, list, {self.asset_atli or {}, self.asset_images or {}}, self.ASSET_ATLAS)
+				old_images(self, list, {self.animation_atli or {}}, self.ANIMATION_ATLAS)
+				if #list > 0 then unloaded = unload(list) end
+			end
 			local r = orig_render_settings(self, ...)
 			collectgarbage("collect")
+			if unloaded > 0 then
+				local st = graphics.getStats()
+				local mb = free_mb and free_mb()
+				print(string.format("[b360] textures reloaded: %d images, %.0f MB%s", st.images,
+					st.texturememory / 1048576, mb and string.format(", %.0f MB free", mb) or ""))
+			end
 			return r
 		end
 	end

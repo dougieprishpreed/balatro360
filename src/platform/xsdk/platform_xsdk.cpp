@@ -205,6 +205,14 @@ void sleep(double seconds) {
     nanosleep(&ts, NULL);
 }
 
+double freeMemoryMB() {
+    MM_QUERY_STATISTICS_RESULT st;
+    memset(&st, 0, sizeof(st));
+    st.size = sizeof(st);
+    if (!NT_SUCCESS(MmQueryStatistics(&st))) return -1;
+    return st.title.available_pages * (4096.0 / (1024.0 * 1024.0));   // 4 KB pages
+}
+
 u64 unixTime() {
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);

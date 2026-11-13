@@ -43,6 +43,9 @@ double getTime();          // seconds, monotonic
 void sleep(double seconds);
 u64 unixTime();            // wall clock seconds since 1970 (for os.time)
 
+// ------------------------------------------------------------------- memory
+double freeMemoryMB();     // the title's free physical memory; -1 if unknown
+
 // ------------------------------------------------------------------ threads
 typedef void (*ThreadFunc)(void* arg);
 struct Thread;

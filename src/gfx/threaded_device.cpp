@@ -15,11 +15,13 @@ const double kMaxLerpGap = 0.1;                // packets further apart than thi
 const float kMaxLerpMove = 192.0f;             // nor draws whose vertices move more than this (pixels)
 const size_t kLookahead = 8;                   // draws of the packet before searched for a match
 const size_t kCopyLimit = 1024 * 1024;         // bigger textures are made at once, not copied
+const size_t kKeepBytes = 2 * 1024 * 1024;     // a spare packet's texture copies keep this much at most
 
 class TTexture : public Texture {
 public:
     Texture* real;
-    TTexture() : real(NULL) {}
+    bool freed;   // by freeTexturesNow: not made, nor drawn
+    TTexture() : real(NULL), freed(false) {}
 };
 
 class TShader : public Shader {
@@ -75,6 +77,9 @@ struct Packet {
     Packet() : time(0), replayed(false), capture(false) {}
     void reset() {
         cmds.clear();
+        // The frame a set of textures loads in copies tens of MB; a packet
+        // kept as spare doesn't hold on to that.
+        if (bytes.capacity() > kKeepBytes) std::vector<u8>().swap(bytes);
         bytes.clear();
         floats.clear();
         verts.clear();
@@ -344,6 +349,20 @@ public:
         return true;
     }
 
+    virtual bool freeTexturesNow(Texture* const* list, int count) {
+        {
+            // The frame before may draw with them: the render thread takes
+            // it, and draws it before the job.
+            plat::Lock l(mu);
+            while (pending && !quit) cv.wait(mu);
+        }
+        Job j(Job::FREE_TEXTURES);
+        j.list = list;
+        j.count = count;
+        run(j);
+        return j.ok;
+    }
+
     virtual bool setGpuProfile(double seconds) {
         Job j(Job::GPU_PROFILE);
         j.seconds = seconds;
@@ -355,17 +374,20 @@ public:
 
 private:
     struct Job {
-        enum Kind { INIT, CREATE_SHADER, CREATE_TEXTURE, GPU_PROFILE };
+        enum Kind { INIT, CREATE_SHADER, CREATE_TEXTURE, FREE_TEXTURES, GPU_PROFILE };
         Kind kind;
         std::string source, err;
         Shader* shader;
         TTexture* tex;
         const u8* pixels;
         bool mipmaps;
+        Texture* const* list;
+        int count;
         double seconds;
         bool ok;
         explicit Job(Kind k)
-            : kind(k), shader(NULL), tex(NULL), pixels(NULL), mipmaps(false), seconds(0), ok(false) {}
+            : kind(k), shader(NULL), tex(NULL), pixels(NULL), mipmaps(false), list(NULL), count(0), seconds(0),
+              ok(false) {}
     };
 
     Device* real;
@@ -440,6 +462,17 @@ private:
         case Job::CREATE_TEXTURE:
             j.tex->real = real->createTexture(j.tex->width, j.tex->height, j.pixels, j.mipmaps);
             j.ok = j.tex->real != NULL;
+            break;
+        case Job::FREE_TEXTURES:
+            for (int i = 0; i < j.count; ++i) {
+                TTexture* t = (TTexture*)j.list[i];
+                if (!t) continue;
+                if (t->real) real->destroyTexture(t->real);
+                t->real = NULL;
+                t->freed = true;
+            }
+            real->collectGarbage();
+            j.ok = true;
             break;
         case Job::GPU_PROFILE: j.ok = real->setGpuProfile(j.seconds); break;
         }
@@ -548,7 +581,8 @@ private:
             Cmd& c = p.cmds[i];
             switch (c.op) {
             case Cmd::CREATE_TEXTURE:
-                if (first) c.tex->real = real->createTexture(c.a, c.b, c.n ? &p.bytes[c.at] : NULL, c.c != 0);
+                if (first && !c.tex->freed)
+                    c.tex->real = real->createTexture(c.a, c.b, c.n ? &p.bytes[c.at] : NULL, c.c != 0);
                 break;
             case Cmd::CREATE_TARGET:
                 if (first) c.tex->real = real->createRenderTarget(c.a, c.b);

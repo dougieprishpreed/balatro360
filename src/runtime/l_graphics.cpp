@@ -90,11 +90,14 @@ public:
     float dpi;
     bool mipmaps;
     bool canvas;
-    TextureObject() : tex(NULL), pw(0), ph(0), dpi(1), mipmaps(false), canvas(false) {}
+    bool unloaded;   // its memory freed early (_b360_unloadImages)
+    TextureObject() : tex(NULL), pw(0), ph(0), dpi(1), mipmaps(false), canvas(false), unloaded(false) {}
     ~TextureObject() {
         if (!tex) return;
-        g_textureMemory -= bytes();
-        --(canvas ? g_canvasCount : g_imageCount);
+        if (!unloaded) {
+            g_textureMemory -= bytes();
+            --(canvas ? g_canvasCount : g_imageCount);
+        }
         if (g_dev) g_dev->destroyTexture(tex);
     }
     // Call once tex is set.
@@ -1952,6 +1955,49 @@ int w_particlesDraw(lua_State* L) {
     return 0;
 }
 
+// Extension: love.graphics._b360_unloadImages(list): frees the GPU memory of
+// the images in list now, for the game to load another set of them without
+// both sets in memory (Pixel Art Smoothing). They're kept as objects, and
+// draw nothing. Returns how many it freed: 0 where the renderer can't.
+int w_unloadImages(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    std::vector<TextureObject*> objs;
+    std::vector<gfx::Texture*> texs;
+    for (int i = 1;; ++i) {
+        lua_rawgeti(L, 1, i);
+        if (lua_isnil(L, -1)) {
+            lua_pop(L, 1);
+            break;
+        }
+        TextureObject* t = (TextureObject*)luax_toobject(L, -1, "Image");
+        lua_pop(L, 1);
+        if (!t || !t->tex || t->unloaded || t->canvas) continue;
+        if (std::find(objs.begin(), objs.end(), t) != objs.end()) continue;
+        objs.push_back(t);
+        texs.push_back(t->tex);
+    }
+    if (texs.empty() || !g_dev->freeTexturesNow(&texs[0], (int)texs.size())) {
+        lua_pushinteger(L, 0);
+        return 1;
+    }
+    for (size_t i = 0; i < objs.size(); ++i) {
+        g_textureMemory -= objs[i]->bytes();
+        --g_imageCount;
+        objs[i]->unloaded = true;
+    }
+    lua_pushinteger(L, (lua_Integer)objs.size());
+    return 1;
+}
+
+// Extension: love.graphics._b360_freeMemory(): the title's free physical
+// memory in MB, or nil where the platform can't tell.
+int w_freeMemory(lua_State* L) {
+    double mb = plat::freeMemoryMB();
+    if (mb < 0) return 0;
+    lua_pushnumber(L, mb);
+    return 1;
+}
+
 int w_getStats(lua_State* L) {
     lua_newtable(L);
     lua_pushinteger(L, g_drawCallsLast);
@@ -2112,6 +2158,7 @@ const luaL_Reg kFuncs[] = {
     {"_b360_setInterpolation", w_setInterpolation}, {"_b360_allowScreenshots", w_allowScreenshots},
     {"_b360_newParticleList", w_newParticleList}, {"_b360_particlesAdopt", w_particlesAdopt},
     {"_b360_particlesMove", w_particlesMove}, {"_b360_particlesDraw", w_particlesDraw},
+    {"_b360_unloadImages", w_unloadImages}, {"_b360_freeMemory", w_freeMemory},
     {"setStencilTest", w_none}, {"stencil", w_none}, {"flushBatch", w_none}, {"discard", w_none},
     {NULL, NULL}};
 

@@ -175,6 +175,12 @@ void sleep(double seconds) {
     Sleep((DWORD)(seconds * 1000.0 + 0.5));
 }
 
+double freeMemoryMB() {
+    MEMORYSTATUS ms;
+    GlobalMemoryStatus(&ms);
+    return ms.dwAvailPhys / (1024.0 * 1024.0);
+}
+
 u64 unixTime() {
     FILETIME ft;
     GetSystemTimeAsFileTime(&ft);

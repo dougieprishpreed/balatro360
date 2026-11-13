@@ -345,6 +345,17 @@ public:
         frames[frame].deadTextures.push_back(t);
     }
 
+    virtual void collectGarbage() {
+        // Submits what's recorded and frees this frame's garbage, then the
+        // other frame's once the GPU is done with it.
+        flushAndWait();
+        for (int i = 0; i < kFrames; ++i) {
+            if (i == frame) continue;
+            vkWaitForFences(dev, 1, &frames[i].fence, VK_TRUE, ~(u64)0);
+            releaseGarbage(frames[i]);
+        }
+    }
+
     virtual void setTextureParams(Texture* tex, Filter minF, Filter magF, Wrap ws, Wrap wt) {
         tex->minFilter = minF;
         tex->magFilter = magF;

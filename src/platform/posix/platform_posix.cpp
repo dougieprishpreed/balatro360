@@ -200,6 +200,8 @@ void sleep(double seconds) {
     nanosleep(&ts, NULL);
 }
 
+double freeMemoryMB() { return -1; }
+
 u64 unixTime() {
     // B360_FIXED_TIME pins os.time() (Balatro seeds new runs from it), so
     // scripted runs are reproducible frame for frame.
